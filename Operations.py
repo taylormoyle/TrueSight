@@ -11,10 +11,16 @@ IMG_HEIGHT = 100
 ******************************************"""
 
 def pool(inp, p_h, p_w, stride, pad):
-    arr = img_to_col(inp, p_h, p_w, inp.shape[2] / 2, inp.shape[3] / 2, pad, stride)
-    arr2 = tf.argmax(arr, axis=0)
-    max_vals = tf.gather(arr, arr2)
-    return max_vals.reshape(-1, inp.shape[1], inp.shape[2] / 2, inp.shape[3] / 2)
+    bat, f_m, h, w = inp.shape
+    o_h, o_w = int(h/2), int(w/2)
+
+    arr = img_to_col(inp, p_h, p_w, o_h, o_w, pad, stride)
+    arr = arr.T.reshape(-1, 4).T
+
+    arr2 = np.argmax(arr, axis=0)
+    max_vals = arr[arr2, np.arange(arr.shape[1])]
+    max_reshape = max_vals.reshape(o_h, o_w, f_m, -1)
+    return max_reshape.transpose(3, 2, 0, 1)
 
 
 def convole(inp, weights, stride=1, pad=0):
@@ -102,11 +108,20 @@ def convole_backprop():
 
 
 def pool_backprop(inp, p_h, p_w, stride, pad, error):
-    arr = img_to_col(inp, p_h, p_w, inp.shape[2] / 2, inp.shape[3] / 2, pad, stride)
-    arr2 = tf.argmax(arr, axis=0)
-    back = np.zeros(arr)
-    np.add.at(back, arr2, error)
-    back = col_to_img(back, inp.shape, p_h, p_w, inp.shape[2], inp.shape[3], pad, stride)
+    bat, f_m, h, w = inp.shape
+    o_h, o_w = int(h / 2), int(w / 2)
+    bat, e_d, e_h, e_w = error.shape
+
+    arr = img_to_col(inp, p_h, p_w, o_h, o_w, pad, stride)
+    arr = arr.T.reshape(-1, p_h * p_w).T
+
+    err = error.transpose(2,3,1,0).reshape(-1)
+
+    arr2 = np.argmax(arr, axis=0)
+    back = np.zeros_like(arr)
+    np.add.at(back, (arr2, np.arange(arr.shape[1])), err)
+    back = back.T.reshape(-1, p_h*p_w*f_m).T
+    back = col_to_img(back, inp.shape, p_h, p_w, e_h, e_w, pad, stride)
     return back
 
 def batch_norm_backprop(std):
