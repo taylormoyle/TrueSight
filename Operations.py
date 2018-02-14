@@ -103,8 +103,28 @@ def mean_square_error(inp, label):
         BACK PROP OPERATIONS
 ******************************************"""
 
-def convole_backprop():
-    pass
+def convole_backprop(inp, weights, delta_out, pad, stride):
+    fm_h = int((inp.shape[2] + 2 * pad - weights.shape[2]) / stride + 1)
+    fm_w = int((inp.shape[3] + 2 * pad - weights.shape[3]) / stride + 1)
+    delta2d = delta_out.reshape(delta_out[0], -1).T
+    weights2d = weights.reshape(weights.shape[0], -1)
+    inp2d = img_to_col(inp, weights.shape[2], weights.shape[3], fm_h, fm_w, pad, stride)
+    dw = tf.matmul(delta2d, inp2d)
+    dx = tf.matmul(weights2d, delta2d)
+    dx = col_to_img(dx, inp.shape, weights.shape[2], weights.shape[3], fm_h, fm_w, pad, stride)
+    return dw, dx
+
+    '''
+            calc delta with respect to weights
+            delta_out shape = (N, c, h, w)
+            weights shape = (N_fm, N_ch, h, w)
+            convert img to col matrix
+            dw = dO * inp
+            calc delta with respect to input
+            dx = W * dO
+            convert dx to img
+            return dw, dx
+        '''
 
 
 def pool_backprop(inp, p_h, p_w, stride, pad, error):
@@ -183,10 +203,10 @@ def get_col_indices(inp_shape, f_h, f_w, o_h, o_w, stride):
 def img_to_col(inp, f_h, f_w, o_h, o_w, pad, stride):
     z, y, x = get_col_indices(inp.shape, f_h, f_w, o_h, o_w, stride)
 
-    inp_padded = np.pad(inp, ((0,0), (0,0), (pad, pad), (pad, pad)), mode='constant')
+    inp_padded = np.pad(inp, ((0, 0), (0, 0), (pad, pad), (pad, pad)), mode='constant')
 
     col = inp_padded[:, z, y, x]
-    col = col.transpose(1,2,0)
+    col = col.transpose(1, 2, 0)
     return col.reshape(f_h * f_w * inp.shape[1], -1)
 
 
@@ -196,7 +216,7 @@ def col_to_img(col, inp_shape, f_h, f_w, o_h, o_w, pad, stride):
 
     img = np.zeros(inp_shape, dtype=float)
     cols_reshaped = col.reshape(i_c*f_h*f_w, -1, N)
-    cols_reshaped = cols_reshaped.transpose(2,0,1)
+    cols_reshaped = cols_reshaped.transpose(2, 0, 1)
     np.add.at(img, (slice(None), z, y, x), cols_reshaped)
 
     if pad == 0:
