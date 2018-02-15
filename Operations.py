@@ -106,26 +106,15 @@ def mean_square_error(inp, label):
 def convole_backprop(inp, weights, delta_out, pad, stride):
     fm_h = int((inp.shape[2] + 2 * pad - weights.shape[2]) / stride + 1)
     fm_w = int((inp.shape[3] + 2 * pad - weights.shape[3]) / stride + 1)
-    delta2d = delta_out.reshape(delta_out[0], -1).T
     weights2d = weights.reshape(weights.shape[0], -1)
     inp2d = img_to_col(inp, weights.shape[2], weights.shape[3], fm_h, fm_w, pad, stride)
-    dw = tf.matmul(delta2d, inp2d)
-    dx = tf.matmul(weights2d, delta2d)
+    dO = delta_out.transpose(1, 2, 3, 0)
+    dO = dO.reshape(weights.shape[0], -1)
+    dw = tf.matmul(dO, inp2d)
+    dw = dw.reshape(weights.shape[0], weights.shape[1], weights.shape[2], weights.shape[3])
+    dx = tf.matmul(weights2d.T, dO)
     dx = col_to_img(dx, inp.shape, weights.shape[2], weights.shape[3], fm_h, fm_w, pad, stride)
     return dw, dx
-
-    '''
-            calc delta with respect to weights
-            delta_out shape = (N, c, h, w)
-            weights shape = (N_fm, N_ch, h, w)
-            convert img to col matrix
-            dw = dO * inp
-            calc delta with respect to input
-            dx = W * dO
-            convert dx to img
-            return dw, dx
-        '''
-
 
 def pool_backprop(inp, p_h, p_w, stride, pad, error):
     bat, f_m, h, w = inp.shape
