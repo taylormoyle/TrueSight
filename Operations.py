@@ -2,15 +2,18 @@ import tensorflow as tf
 import numpy as np
 from math import sqrt
 
-IMG_WIDTH = 100
-IMG_HEIGHT = 100
-
+IMG_HEIGHT = 416
+IMG_WIDTH = 416
+CELL_HEIGHT = 32
+CELL_WIDTH = 32
+GRID_HEIGHT = 13
+GRID_WIDTH = 13
 
 """******************************************
         FORWARD PROP OPERATIONS
 ******************************************"""
 
-def pool(inp, p_h, p_w, stride, pad):
+def pool(inp, p_h, p_w, stride, pad=0):
     bat, f_m, h, w = inp.shape
     o_h, o_w = int(h/2), int(w/2)
 
@@ -23,7 +26,7 @@ def pool(inp, p_h, p_w, stride, pad):
     return max_reshape.transpose(3, 2, 0, 1)
 
 
-def convole(inp, weights, stride=1, pad=0):
+def convolve(inp, weights, stride=1, pad=0):
     bat, i_c, i_h, i_w = inp.shape
     n_f, n_c, f_h, f_w = weights.shape
     o_h = int((i_h + 2 * pad - f_h) / stride + 1)
@@ -45,10 +48,15 @@ def batch_normalize(inp, gamma, beta, epsilon=1e-8):
     g/s * H - gm/s + b
     g/s * H + b - gm/s
     """
-    mean, variance = tf.nn.moments(inp, axes=[0, 1, 2])
-    std = tf.sqrt(variance + epsilon)
-    norm_inp = gamma / std * inp + (beta - gamma * mean / std)
-    return norm_inp, mean, std
+    #mean, variance = tf.nn.moments(inp, axes=[0, 2, 3])
+
+    N, D, h, w = inp.shape
+    mean = np.mean(inp, axis=(0, 2, 3))
+    variance = np.mean((inp - mean[0]) * (inp - mean[0]))
+
+    std = np.sqrt(variance + epsilon)
+    norm_inp = gamma / std * inp + (beta - gamma * mean[0] / std)
+    return norm_inp #, mean, std
 
 
 """******************************************
@@ -56,15 +64,15 @@ def batch_normalize(inp, gamma, beta, epsilon=1e-8):
 ******************************************"""
 
 def relu(inp):
-    return tf.maximum(inp, 0)
+    return np.maximum(inp, 0)
 
 
 def leaky_relu(inp, alpha=0.01):
-    return tf.maximum(inp, inp*alpha)
+    return np.maximum(inp, inp*alpha)
 
 
 def sigmoid(inp):
-    return 1 / (1 + (tf.exp(-inp)))
+    return 1 / (1 + (np.exp(-inp)))
 
 
 """******************************************
@@ -133,8 +141,19 @@ def pool_backprop(inp, p_h, p_w, stride, pad, error):
     back = col_to_img(back, inp.shape, p_h, p_w, e_h, e_w, pad, stride)
     return back
 
-def batch_norm_backprop(std):
-    pass
+def batchnorm_backprop(delta_out, cache):
+    N, D = delta_out.shape
+    mean, inv_var, x_hat, gamma = cache
+
+    # intermediate partial derivatives
+    dxhat = delta_out * gamma
+
+    # final partial derivatives
+    dx = (1. / N) * inv_var * (N*dxhat - np.sum(dxhat, axis=0) - x_hat*np.sum(dxhat*x_hat, axis=0))
+    db = np.sum(delta_out, axis=0)
+    dg = np.sum(x_hat*delta_out, axis=0)
+
+    return dx, dg, db
 
 
 """******************************************
@@ -239,11 +258,24 @@ def _find_intersection(box1, box2, width, height):
     return np.sum(b1 * b2)
 
 
-def _find_corners(box):
-    bT = int(box[2] - (box[4] / 2))
-    bR = int(box[1] + (box[3] / 2))
-    bB = int(box[2] + (box[4] / 2))
-    bL = int(box[1] - (box[3] / 2))
+def _find_corners(box, index):
+    bb_h = np.floor(box[3] * IMG_HEIGHT)
+    bb_w = np.floor(box[4] * IMG_WIDTH)
+    y_mid = box[1] * CELL_HEIGHT
+    x_mid = box[2] * CELL_WIDTH
+
+    grid_x = index % GRID_WIDTH
+    grid_y = (index - grid_x) / GRID_WIDTH
+
+    x = grid_x * CELL_WIDTH + x_mid
+    y = grid_y * CELL_HEIGHT + y_mid
+
+    print(x, y, bb_h, bb_w, x_mid, y_mid, grid_x, grid_y)
+
+    bT = int(y - (bb_w / 2))
+    bR = int(x + (bb_h / 2))
+    bB = int(y + (bb_w / 2))
+    bL = int(x - (bb_h / 2))
 
     TL = [bT, bL]
     TR = [bT, bR]
@@ -254,6 +286,7 @@ def _find_corners(box):
 
 
 def non_max_suppression(bounding_boxes, conf_threshold, IoU_threshold):
+    bounding_boxes = bounding_boxes.reshape(-1, 5)
     predictions = np.array([], dtype=int)
     i = 0
     while i < bounding_boxes.shape[0]:
@@ -274,13 +307,19 @@ def non_max_suppression(bounding_boxes, conf_threshold, IoU_threshold):
 
 
 def initialize_weights(shape):
+    '''
     std_dev = 1 / (sqrt(tf.cumprod(shape)[-1]))
     weights = tf.random_normal(shape, stddev=std_dev)
     return tf.Variable(weights)
+    '''
+    std = 1/sqrt(np.sum(shape))
+    weights = np.random.randn(shape) / std
+    return weights
 
 
 def zero_pad(inp, pad):
-    return tf.pad(inp, [[pad, pad], [pad, pad]], mode='CONSTANT')
+    #return tf.pad(inp, [[pad, pad], [pad, pad]], mode='CONSTANT')
+    return np.pad(inp, ((pad, pad), (pad, pad)), 'constant', constant_values=0)
 
 
 def grad_check(weights, grads):
