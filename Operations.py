@@ -15,15 +15,16 @@ GRID_WIDTH = 13
 
 def pool(inp, p_h, p_w, stride, pad=0):
     bat, f_m, h, w = inp.shape
-    o_h, o_w = int(h/2), int(w/2)
+    o_h = int((h + 2 * pad - p_h) / stride + 1)
+    o_w = int((w + 2 * pad - p_w) / stride + 1)
 
-    arr = img_to_col(inp, p_h, p_w, o_h, o_w, pad, stride)
-    arr = arr.T.reshape(-1, 4).T
+    inp_reshaped = inp.reshape(-1, 1, h, w)
+    inp_col = img_to_col(inp_reshaped, p_h, p_w, o_h, o_w, pad, stride)
 
-    arr2 = np.argmax(arr, axis=0)
-    max_vals = arr[arr2, np.arange(arr.shape[1])]
-    max_reshape = max_vals.reshape(o_h, o_w, f_m, -1)
-    return max_reshape.transpose(3, 2, 0, 1)
+    max_indices = np.argmax(inp_col, axis=0)
+    max_vals = inp_col[max_indices, np.arange(inp_col.shape[1])]
+    max_reshape = max_vals.reshape(o_h, o_w, -1, f_m)
+    return max_reshape.transpose(2, 3, 0, 1)
 
 
 def convolve(inp, weights, stride=1, pad=0):
@@ -116,32 +117,36 @@ def convole_backprop(inp, weights, delta_out, pad, stride):
     fm_w = int((inp.shape[3] + 2 * pad - weights.shape[3]) / stride + 1)
     weights2d = weights.reshape(weights.shape[0], -1)
     inp2d = img_to_col(inp, weights.shape[2], weights.shape[3], fm_h, fm_w, pad, stride)
+
     dO = delta_out.transpose(1, 2, 3, 0)
     dO = dO.reshape(weights.shape[0], -1)
-    dw = tf.matmul(dO, inp2d)
-    dw = dw.reshape(weights.shape[0], weights.shape[1], weights.shape[2], weights.shape[3])
+
     dx = tf.matmul(weights2d.T, dO)
     dx = col_to_img(dx, inp.shape, weights.shape[2], weights.shape[3], fm_h, fm_w, pad, stride)
+
+    dw = tf.matmul(dO, inp2d)
+    dw = dw.reshape(weights.shape[0], weights.shape[2], weights.shape[3], weights.shape[1])
+    dw = dw.transpose(0, 3, 1, 2)
     return dw, dx
 
 def pool_backprop(inp, p_h, p_w, stride, pad, error):
     bat, f_m, h, w = inp.shape
-    o_h, o_w = int(h / 2), int(w / 2)
+    o_h = int((h + 2 * pad - p_h) / stride + 1)
+    o_w = int((w + 2 * pad - p_w) / stride + 1)
     bat, e_d, e_h, e_w = error.shape
 
-    arr = img_to_col(inp, p_h, p_w, o_h, o_w, pad, stride)
-    arr = arr.T.reshape(-1, p_h * p_w).T
+    inp_reshaped = inp.reshape(-1, 1, h, w)
+    inp_col = img_to_col(inp_reshaped, p_h, p_w, o_h, o_w, pad, stride)
 
     err = error.transpose(2,3,1,0).reshape(-1)
 
-    arr2 = np.argmax(arr, axis=0)
-    back = np.zeros_like(arr)
-    np.add.at(back, (arr2, np.arange(arr.shape[1])), err)
-    back = back.T.reshape(-1, p_h*p_w*f_m).T
-    back = col_to_img(back, inp.shape, p_h, p_w, e_h, e_w, pad, stride)
+    max_indices = np.argmax(inp_col, axis=0)
+    back = np.zeros_like(inp_col)
+    np.add.at(back, (max_indices, np.arange(inp_col.shape[1])), err)
+    back = col_to_img(back, inp_reshaped.shape, p_h, p_w, e_h, e_w, pad, stride)
     return back
 
-def batchnorm_backprop(delta_out, cache):
+def batch_norm_backprop(delta_out, cache):
     N, D = delta_out.shape
     mean, inv_var, x_hat, gamma = cache
 
