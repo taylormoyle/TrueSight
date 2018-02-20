@@ -1,5 +1,5 @@
 TODO:
-	implement grad check
+DONE --	implement grad check
 	write training script for classification
 	run a small training session while checking gradients
 	convert to tensorflow
