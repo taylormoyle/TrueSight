@@ -28,7 +28,7 @@ def prep_data(img_dir, xml_dir):
                         for subelem in elem:
                             if subelem.tag == 'name':
                                 labels.append(subelem.text)
-        data = {'filename': name, 'labels': labels}
+        data = {'filename': f, 'labels': labels}
         dataset.append(data)
         labels = []
     return dataset
