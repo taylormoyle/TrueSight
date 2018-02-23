@@ -326,27 +326,3 @@ def zero_pad(inp, pad):
     #return tf.pad(inp, [[pad, pad], [pad, pad]], mode='CONSTANT')
     return np.pad(inp, ((pad, pad), (pad, pad)), 'constant', constant_values=0)
 
-
-def grad_check(inp, labels, weights, grads, params, epsilon=1e-8):
-    batch, lcoord, lnoobj = params
-    back = weights.shape
-    W = weights.reshape(-1)
-    num_grads = tf.zeros(W.shape, dtype=np.float32)
-
-    for p in range(len(W)):
-        W[p] += epsilon
-        W = W.reshape(back)
-        cost_plus = forward_prop(inp)
-        cost_plus = cost_function(cost_plus, labels, batch, lcoord, lnoobj)
-        W = W.reshape(-1)
-
-        W[p] -= 2 * epsilon
-        W = W.reshape(back)
-        cost_minus = forward_prop(inp)
-        cost_minus = cost_function(cost_minus, labels, batch, lcoord, lnoobj)
-        W = W.reshape(-1)
-
-        num_grads[p] = (cost_plus - cost_minus) / (2 * epsilon)
-
-    rel_error = np.linalg.norm(grads - num_grads) / (np.linalg.norm(grads) + np.linalg.norm(num_grads))
-    return rel_error
