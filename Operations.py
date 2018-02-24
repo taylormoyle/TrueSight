@@ -41,7 +41,7 @@ def convolve(inp, weights, stride=1, pad=0):
     return output.transpose(3, 0, 1, 2)
 
 
-def batch_normalize(inp, gamma, beta, epsilon=1e-8):
+def batch_normalize(inp, bg, epsilon=1e-8):
     """
     H' = (H - m) / s
     g*H' + b
@@ -54,10 +54,13 @@ def batch_normalize(inp, gamma, beta, epsilon=1e-8):
     N, D, h, w = inp.shape
     mean = np.mean(inp, axis=(0, 2, 3))
     variance = np.mean((inp - mean[0]) * (inp - mean[0]))
+    inv_std = 1 / np.sqrt(variance + epsilon)
+    x_hat = (inp - mean) * inv_std
 
-    std = np.sqrt(variance + epsilon)
-    norm_inp = gamma / std * inp + (beta - gamma * mean[0] / std)
-    return norm_inp #, mean, std
+    norm_inp = bg[1] * x_hat + bg[0]
+
+    cache = mean, inv_std, x_hat, bg[1]
+    return norm_inp, cache
 
 
 """******************************************
@@ -112,7 +115,7 @@ def mean_square_error(inp, label):
         BACK PROP OPERATIONS
 ******************************************"""
 
-def convole_backprop(inp, weights, delta_out, pad, stride):
+def convolve_backprop(delta_out, inp, weights, pad=0, stride=1):
     fm_h = int((inp.shape[2] + 2 * pad - weights.shape[2]) / stride + 1)
     fm_w = int((inp.shape[3] + 2 * pad - weights.shape[3]) / stride + 1)
     weights2d = weights.reshape(weights.shape[0], -1)
@@ -127,9 +130,9 @@ def convole_backprop(inp, weights, delta_out, pad, stride):
     dw = tf.matmul(dO, inp2d)
     dw = dw.reshape(weights.shape[0], weights.shape[2], weights.shape[3], weights.shape[1])
     dw = dw.transpose(0, 3, 1, 2)
-    return dw, dx
+    return dx, dw
 
-def pool_backprop(inp, p_h, p_w, stride, pad, error):
+def pool_backprop(error, inp, p_h, p_w, stride, pad=0):
     bat, f_m, h, w = inp.shape
     o_h = int((h + 2 * pad - p_h) / stride + 1)
     o_w = int((w + 2 * pad - p_w) / stride + 1)
@@ -148,17 +151,17 @@ def pool_backprop(inp, p_h, p_w, stride, pad, error):
 
 def batch_norm_backprop(delta_out, cache):
     N, D = delta_out.shape
-    mean, inv_var, x_hat, gamma = cache
+    mean, inv_std, x_hat, gamma = cache
 
     # intermediate partial derivatives
     dxhat = delta_out * gamma
 
     # final partial derivatives
-    dx = (1. / N) * inv_var * (N*dxhat - np.sum(dxhat, axis=0) - x_hat*np.sum(dxhat*x_hat, axis=0))
+    dx = (1. / N) * inv_std * (N*dxhat - np.sum(dxhat, axis=0) - x_hat*np.sum(dxhat*x_hat, axis=0))
     db = np.sum(delta_out, axis=0)
     dg = np.sum(x_hat*delta_out, axis=0)
 
-    return dx, dg, db
+    return dx, db, dg
 
 
 """******************************************
@@ -320,6 +323,10 @@ def initialize_weights(shape):
     std = 1/sqrt(np.sum(shape))
     weights = np.random.randn(shape) / std
     return weights
+
+
+def update_weights(weights, gradients):
+    return weights - gradients
 
 
 def zero_pad(inp, pad):
