@@ -240,14 +240,14 @@ def col_to_img(col, inp_shape, f_h, f_w, o_h, o_w, pad, stride):
     return img[:, :, pad:-pad, pad:-pad]
 
 
-def intersection_over_union(box1, box2, img_width, img_height):
-    I = _find_intersection(box1, box2, img_width, img_height)
+def intersection_over_union(box1, box2, box1_cell, box2_cell, img_width, img_height):
+    I = _find_intersection(box1, box2, box1_cell, box2_cell, img_width, img_height)
     U = (box1[3] * box1[4] + box2[3] * box2[4]) - I
     return I / U
 
 
-def _find_intersection(box1, box2, width, height):
-    TL1, TR1, BL1, BR1 = _find_corners(box1)
+def _find_intersection(box1, box2, box1_cell, box2_cell, width, height):
+    TL1, TR1, BL1, BR1 = _find_corners(box1, box1_cell)
     b1 = np.zeros((height, width))
     b1x1 = TL1[1]
     b1x2 = TR1[1]
@@ -255,7 +255,7 @@ def _find_intersection(box1, box2, width, height):
     b1y2 = BL1[0]
     b1[b1y1:b1y2, b1x1:b1x2] = 1
 
-    TL2, TR2, BL2, BR2 = _find_corners(box2)
+    TL2, TR2, BL2, BR2 = _find_corners(box2, box2_cell)
     b2 = np.zeros((height, width))
     b2x1 = TL2[1]
     b2x2 = TR2[1]
@@ -266,14 +266,14 @@ def _find_intersection(box1, box2, width, height):
     return np.sum(b1 * b2)
 
 
-def _find_corners(box, index):
+def _find_corners(box, cell):
     bb_h = np.floor(box[3] * IMG_HEIGHT)
     bb_w = np.floor(box[4] * IMG_WIDTH)
     y_mid = box[1] * CELL_HEIGHT
     x_mid = box[2] * CELL_WIDTH
 
-    grid_x = index % GRID_WIDTH
-    grid_y = (index - grid_x) / GRID_WIDTH
+    grid_x = cell % GRID_WIDTH
+    grid_y = (cell - grid_x) / GRID_WIDTH
 
     x = grid_x * CELL_WIDTH + x_mid
     y = grid_y * CELL_HEIGHT + y_mid
@@ -295,19 +295,20 @@ def _find_corners(box, index):
 
 def non_max_suppression(bounding_boxes, conf_threshold, IoU_threshold):
     bounding_boxes = bounding_boxes.reshape(-1, 5)
+    bnd_boxes = bounding_boxes
     predictions = np.array([], dtype=int)
     i = 0
-    while i < bounding_boxes.shape[0]:
-        if bounding_boxes[i][0] < conf_threshold:
-            bounding_boxes[i][0] = 0
+    while i < bnd_boxes.shape[0]:
+        if bnd_boxes[i][0] < conf_threshold:
+            bnd_boxes[i][0] = 0
             i = i + 1
         else:
-            p = np.argmax(bounding_boxes.T[0], axis=0)
+            p = np.argmax(bnd_boxes.T[0], axis=0)
             predictions = np.append(predictions, p)
-            bounding_boxes[predictions[-1]][0] = 0
-            for b in bounding_boxes:
+            bnd_boxes[predictions[-1]][0] = 0
+            for b in range(bnd_boxes):
                 if b[0] != 0:
-                    overlap = intersection_over_union(b, bounding_boxes[predictions[-1]], IMG_HEIGHT, IMG_WIDTH)
+                    overlap = intersection_over_union(bnd_boxes[b], bnd_boxes[predictions[-1]], b, predictions[-1], IMG_HEIGHT, IMG_WIDTH)
                     if overlap >= IoU_threshold:
                         b[0] = 0
                         i = i + 1
