@@ -118,6 +118,8 @@ class Neural_Network:
         _, p_h4, p_w4, stride4, _ = infos[9]
         _, p_h5, p_w5, stride5, _ = infos[11]
 
+        w = self.weights
+
         '''   LAYER 1   '''
         conv1 = op.convolve(inp, w['conv1'], pad=pad1)
         relu1 = op.relu(conv1)
@@ -234,8 +236,8 @@ class Neural_Network:
         batch_norm_dx, batch_norm6_db, batch_norm6_dg = op.batch_norm_backprop(pool, cache[9][1])
         relu_error = op.relu_prime(cache[10]) * batch_norm_dx
         conv_dx, conv6_dw = op.convolve(relu_error, cache[11], w['conv6'], pad=pad6)
-        w['bn6'] = op.update_weights([w['bn6']], [batch_norm6_db, batch_norm6_dg])
-        w['conv6' = op.update_weights(w['conv6's, conv6_dw)
+        w['bn6'] = op.update_weights(w['bn6'], [batch_norm6_db, batch_norm6_dg])
+        w['conv6'] = op.update_weights(w['conv6'], conv6_dw)
 
         '''   LAYER 5   '''
         pool = op.pool_backprop(conv_dx, cache[12][0], p_h3, p_w3, stride3)
