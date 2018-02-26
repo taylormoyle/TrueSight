@@ -78,7 +78,8 @@ def load_data(data, batch_size, batch):
     for i in range(batch_size):
         im = Image.open(data[i*batch]['filename'])
         img = np.array(im)
-        img = img.transpose(2, 0, 1)
+        img = resize_img(img)
+        img = img.transpose((2, 0, 1))
         images.append({'img': img, 'label': data[i*batch]['label']})
     return images
 
@@ -102,41 +103,63 @@ def resize_img(img):
 # Perform transformations, normalize images, return array of tuples [(norm_image, label)]
 def process_data(images):
     # Resize all images to 416 x 416
-    for i in range(images.shape):
-        resize_img(images[i])
+    #for i in range(images.shape):
+    #    resize_img(images[i])
 
     # Perform Transformations on all images to diversify dataset
-    tf.transpose(0, 2, 3, 1)
+    images = tf.transpose(images, (0, 2, 3, 1))
     image_huerized = tf.image.random_hue(images, DELTA_HUE)
     image_saturized = tf.image.random_saturation(image_huerized, MAX_DELTA_SATURATION, MIN_DELTA_SATURATION)
     image_flipperized = tf.image.random_flip_left_right(image_saturized)
+    images = tf.transpose(image_flipperized, (0, 3, 1, 2))
 
     # Normalize images to reduce noise
-    mean, variance = tf.nn.moments(image_flipperized, axes=[0, 2, 3])
+    mean, variance = tf.nn.moments(images, axes=[0, 2, 3])
     images = (image_flipperized - mean) / tf.sqrt(variance)
     return images
 
 
-def grad_check(inp, labels, weights, gradients, params, epsilon=1e-8):
+def grad_check(net, inp, labels, weights, gradients, params, infos, epsilon=1e-8):
     batch, lcoord, lnoobj = params
-    back = weights.shape
-    W = weights.reshape(-1)
-    num_grads = tf.zeros(W.shape, dtype=np.float32)
+    #back = weights.shape
+    #W = weights.reshape(-1)
+    #num_grads = {}
+    #an_grads = {}
+    rel_error = {}
 
-    for p in range(len(W)):
-        W[p] += epsilon
-        W = W.reshape(back)
-        cost_plus = nn.forward_prop(inp)
-        cost_plus = op.cost_function(cost_plus, labels, batch, lcoord, lnoobj)
-        W = W.reshape(-1)
+    for w in weights:
+        back = weights[w].shape
+        w_re = weights[w].reshape(-1)
+        len_10 = int(len(w_re) * 0.1)
 
-        W[p] -= 2 * epsilon
-        W = W.reshape(back)
-        cost_minus = nn.forward_prop(inp)
-        cost_minus = op.cost_function(cost_minus, labels, batch, lcoord, lnoobj)
-        W = W.reshape(-1)
+        n_g = np.zeros(len_10)
+        a_g = np.zeros(len_10)
+        for i in range(len_10):
+            p = rand.randint(0, len(w_re)-1)
 
-        num_grads[p] = (cost_plus - cost_minus) / (2 * epsilon)
+            w_re[p] += epsilon
+            w_re = w_re.reshape(back)
+            weights[w] = w_re
 
-    rel_error = np.linalg.norm(gradients - num_grads) / (np.linalg.norm(gradients) + np.linalg.norm(num_grads))
+            cost_plus = net.forward_prop(infos, inp, weights, training=False)
+            cost_plus = op.mean_square_error(cost_plus, labels)
+
+            w_re = w_re.reshape(-1)
+            w_re[p] -= 2 * epsilon
+            w_re = w_re.reshape(back)
+            weights[w] = w_re
+
+            cost_minus = net.forward_prop(infos, inp, weights, training=False)
+            cost_minus = op.mean_square_error(cost_minus, labels)
+
+            w_re= w_re.reshape(-1)
+
+            n_g[i] = (cost_plus - cost_minus) / (2 * epsilon)
+            a_g[i] = gradients[w].reshape(-1)[p]
+        #num_grads[w] = n_g
+        #an_grads[w] = a_g
+
+        rel_error[w] = np.linalg.norm(a_g - n_g) / (np.linalg.norm(a_g) + np.linalg.norm(n_g))
     return rel_error
+
+

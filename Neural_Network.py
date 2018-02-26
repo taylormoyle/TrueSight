@@ -101,7 +101,7 @@ class Neural_Network:
     def create_emotion_rec(self, infos, inp):
         pass
 
-    def forward_prop(self, infos, inp, training=False):
+    def forward_prop(self, infos, inp, weights, training=False):
         n_fm, f_h, f_w, _, pad1 = infos[0]
         n_fm, f_h, f_w, _, pad2 = infos[1]
         n_fm, f_h, f_w, _, pad3 = infos[3]
@@ -119,7 +119,7 @@ class Neural_Network:
         _, p_h4, p_w4, stride4, _ = infos[9]
         _, p_h5, p_w5, stride5, _ = infos[11]
 
-        w = self.weights
+        w = weights
 
         '''   LAYER 1   '''
         conv1 = op.convolve(inp, w['conv1'], pad=pad1)
