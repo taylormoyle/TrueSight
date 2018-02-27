@@ -53,9 +53,10 @@ def batch_normalize(inp, bg, epsilon=1e-8):
 
     N, D, h, w = inp.shape
     mean = np.mean(inp, axis=(0, 2, 3))
-    variance = np.mean((inp - mean[0]) * (inp - mean[0]))
+    inp_minus_mean = inp - mean[0]
+    variance = np.mean(inp_minus_mean * inp_minus_mean)
     inv_std = 1 / np.sqrt(variance + epsilon)
-    x_hat = (inp - mean) * inv_std
+    x_hat = inp_minus_mean * inv_std
 
     norm_inp = bg[1] * x_hat + bg[0]
 
@@ -322,7 +323,7 @@ def initialize_weights(shape):
     return tf.Variable(weights)
     '''
     std = 1/sqrt(np.sum(shape))
-    weights = np.random.randn(shape) / std
+    weights = np.random.standard_normal(shape) / std
     return weights
 
 

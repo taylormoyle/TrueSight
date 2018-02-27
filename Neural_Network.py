@@ -9,9 +9,10 @@ class Neural_Network:
         #model_type can specify which application we want to customize our operations for.
 
         if model_type == "facial_recognition":
-            self.conv_thresh, self.IoU_thresh = hypers
-            self._init_facial_rec_weights(infos)
+            #_, self.conv_thresh, self.IoU_thresh = hypers
+            #self._init_facial_rec_weights(infos)
             #self.create_facial_rec(infos)
+            pass
 
         if model_type == "emotion_recognition":
             #self.create_emotion_rec(infos)
@@ -20,7 +21,7 @@ class Neural_Network:
         self.batch_norm_avgs = np.zeros((hypers[0], 2))
 
     # Create the shell of the facial recognition neural network.
-    def create_facial_rec(self, infos, inp):
+    def create_facial_rec(self, infos, inp, weights):
 
         n_fm, f_h, f_w, _, pad1 = infos[0]
         n_fm, f_h, f_w, _, pad2 = infos[1]
@@ -39,7 +40,7 @@ class Neural_Network:
         _, p_h4, p_w4, stride4, _ = infos[9]
         _, p_h5, p_w5, stride5, _ = infos[11]
 
-        w = self.weights
+        w = weights
 
         '''   LAYER 1   '''
         conv1 = op.convolve(inp, w['conv1'], pad=pad1)
@@ -174,9 +175,9 @@ class Neural_Network:
         '''   LAYER 10   '''
         conv10 = op.convolve(relu9, w['conv10'], pad=pad10)
         relu10 = op.relu(conv10)
-        prediction = op.non_max_suppression(relu10, self.conv_thresh, self.IoU_thresh)
+        #prediction = op.non_max_suppression(relu10, self.conv_thresh, self.IoU_thresh)
+        prediction = op.sigmoid(relu10)
 
-        cache = 0
         if training:
             samp_batch_norms = np.array([w['bn1'], w['bn2'], w['bn3'], w['bn4'],
                                          w['bn5'], w['bn6'], w['bn7'], w['b8'], w['bn9']])
@@ -188,12 +189,13 @@ class Neural_Network:
                      pool5, batch_norm5, conv5, pool4, batch_norm4, conv4,
                      batch_norm3, conv3, pool2, batch_norm2, conv2,
                      batch_norm1, conv1, inp]
-        return prediction, cache
+            return prediction, cache
+        return prediction
 
-    def backward_prop(self, cache, output, labels, infos):
+    def backward_prop(self, cache, output, labels, weights, infos):
         error = op.mse_prime(output, labels)
 
-        w = self.weights
+        w = weights
 
         n_fm, f_h, f_w, _, pad1 = infos[0]
         n_fm, f_h, f_w, _, pad2 = infos[1]
@@ -295,40 +297,40 @@ class Neural_Network:
 
         return gradients
 
-    def _init_facial_rec_weights(self, infos):
+    def init_facial_rec_weights(self, infos):
         weights = {}
 
         n_fm1, f_h, f_w, _, _ = infos[0]
-        weights['conv1'] = op.initialize_weights([n_fm1, 3, f_h, f_w])
+        weights['conv1'] = op.initialize_weights((n_fm1, 3, f_h, f_w))
 
         n_fm2, f_h, f_w, _, _ = infos[1]
-        weights['conv2'] = op.initialize_weights([n_fm2, n_fm1, f_h, f_w])
+        weights['conv2'] = op.initialize_weights((n_fm2, n_fm1, f_h, f_w))
 
         n_fm3, f_h, f_w, _, _ = infos[3]
-        weights['conv3'] = op.initialize_weights([n_fm3, n_fm2, f_h, f_w])
+        weights['conv3'] = op.initialize_weights((n_fm3, n_fm2, f_h, f_w))
 
         n_fm4, f_h, f_w, _, _ = infos[4]
-        weights['conv4'] = op.initialize_weights([n_fm4, n_fm3, f_h, f_w])
+        weights['conv4'] = op.initialize_weights((n_fm4, n_fm3, f_h, f_w))
 
         n_fm5, f_h, f_w, _, _ = infos[6]
-        weights['conv5'] = op.initialize_weights([n_fm5, n_fm4, f_h, f_w])
+        weights['conv5'] = op.initialize_weights((n_fm5, n_fm4, f_h, f_w))
 
         n_fm6, f_h, f_w, _, _ = infos[8]
-        weights['conv6'] = op.initialize_weights([n_fm6, n_fm5, f_h, f_w])
+        weights['conv6'] = op.initialize_weights((n_fm6, n_fm5, f_h, f_w))
 
         n_fm7, f_h, f_w, _, _ = infos[10]
-        weights['conv7'] = op.initialize_weights([n_fm7, n_fm6, f_h, f_w])
+        weights['conv7'] = op.initialize_weights((n_fm7, n_fm6, f_h, f_w))
 
         n_fm8, f_h, f_w, _, _ = infos[12]
-        weights['conv8'] = op.initialize_weights([n_fm8, n_fm7, f_h, f_w])
+        weights['conv8'] = op.initialize_weights((n_fm8, n_fm7, f_h, f_w))
 
         n_fm9, f_h, f_w, _, _ = infos[13]
-        weights['conv9'] = op.initialize_weights([n_fm9, n_fm8, f_h, f_w])
+        weights['conv9'] = op.initialize_weights((n_fm9, n_fm8, f_h, f_w))
 
         n_fm10, f_h, f_w, _, _ = infos[14]
-        weights['conv10'] = op.initialize_weights([n_fm10, n_fm9, f_h, f_w])
+        weights['conv10'] = op.initialize_weights((n_fm10, n_fm9, f_h, f_w))
 
         for i in range(9):
-            weights["bn" + str(i+1)] = op.initialize_weights([2])
+            weights["bn" + str(i+1)] = op.initialize_weights((2))
 
-        self.weights = weights
+        return weights

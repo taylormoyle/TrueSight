@@ -13,6 +13,7 @@ DELTA_HUE = 0.3
 MAX_DELTA_SATURATION = 0.3
 MIN_DELTA_SATURATION = 0.3
 
+
 # Gather files, attach labels to their associated filenames, and return an array of tuples [(filename, label)]
 def prep_data(img_dir, xml_dir, test_percent=10, validation_percent=10):
     dataset = []
@@ -74,19 +75,18 @@ def prep_data(img_dir, xml_dir, test_percent=10, validation_percent=10):
 
 # Loads each file as np RGB array, and returns an array of tuples [(image, label)]
 def load_data(data, batch_size, batch):
-    images = []
+    images = {'images': np.zeros((batch_size, 3, RES, RES)), 'labels': []}
     for i in range(batch_size):
         im = Image.open(data[i*batch]['filename'])
-        img = np.array(im)
-        img = resize_img(img)
+        img = resize_img(im)
         img = img.transpose((2, 0, 1))
-        images.append({'img': img, 'label': data[i*batch]['label']})
+        images['images'][i] = img
+        images['labels'].append(data[i*batch]['labels'])
     return images
 
 
 # Resize image to a 416 x 416 resolution
 def resize_img(img):
-    RES = 416
     img.thumbnail([RES, RES], Image.ANTIALIAS)
     img = np.array(img)
     height, width, _ = img.shape
@@ -119,14 +119,8 @@ def process_data(images):
     return images
 
 
-def grad_check(net, inp, labels, weights, gradients, params, infos, epsilon=1e-8):
-    batch, lcoord, lnoobj = params
-    #back = weights.shape
-    #W = weights.reshape(-1)
-    #num_grads = {}
-    #an_grads = {}
+def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-8):
     rel_error = {}
-
     for w in weights:
         back = weights[w].shape
         w_re = weights[w].reshape(-1)
@@ -156,10 +150,61 @@ def grad_check(net, inp, labels, weights, gradients, params, infos, epsilon=1e-8
 
             n_g[i] = (cost_plus - cost_minus) / (2 * epsilon)
             a_g[i] = gradients[w].reshape(-1)[p]
-        #num_grads[w] = n_g
-        #an_grads[w] = a_g
 
         rel_error[w] = np.linalg.norm(a_g - n_g) / (np.linalg.norm(a_g) + np.linalg.norm(n_g))
     return rel_error
 
+''''     TRAINING SCRIPT     '''
+epoch = 100
+batch_size = 2
 
+infos = [[16, 3, 3, 1, 1],      # output shape (416, 416, 16)
+         [16, 3, 3, 1, 1],      # output shape (416, 416, 16)
+         [0, 2, 2, 2, 0],       # output shape (208, 208, 16)
+         [32, 3, 3, 1, 1],      # output shape (208, 208, 32)
+         [32, 3, 3, 1, 1],      # output shape (208, 208, 32)
+         [0, 2, 2, 2, 0],       # output shape (104, 104, 32)
+         [64, 3, 3, 1, 1],      # output shape (104, 104, 64)
+         [0, 2, 2, 2, 0],       # output shape ( 52,  52, 64)
+         [128, 3, 3, 1, 1],     # output shape ( 52,  52, 128)
+         [0, 2, 2, 2, 0],       # output shape ( 26,  26, 128)
+         [256, 3, 3, 1, 1],     # output shape ( 26,  26, 256)
+         [0, 2, 2, 2, 0],       # output shape ( 13,  13, 256)
+         [512, 1, 1, 1, 1],     # output shape ( 13,  13, 512)
+         [512, 1, 1, 1, 1],     # output shape ( 13,  13, 512)
+         [ 5, 1, 1, 1, 1]]      # output shape ( 13,  13, 5)
+
+
+hypers = [9]
+img_dir = "data\\VOC2012\\JPEGImages"
+xml_dir = "data\\VOC2012\\Annotations"
+
+net = nn.Neural_Network("facial_recognition", infos, hypers, training=True)
+weights = net.init_facial_rec_weights(infos)
+
+data = prep_data(img_dir, xml_dir)
+for e in range(epoch):
+    # shuffle data
+    dataset = data['training']
+    rand.shuffle(dataset)
+    num_batches = int(len(dataset) / batch_size)
+    for b in range(num_batches):
+        # load batch
+        imgs = load_data(dataset, batch_size, b)
+
+        # process batch
+        # implement later
+
+        # forward prop
+        predictions, cache = net.forward_prop(infos, imgs['images'], weights, training=True)
+
+        # back prop
+        grads = net.backward_prop(cache, predictions, imgs['labels'], weights, infos)
+
+        if b % 5 == 0:
+            rel_err = grad_check(net, imgs['images'], imgs['labels'], weights, grads, infos)
+            for i in rel_err:
+                print('gradient errors: ', rel_err[i])
+    # check validation accuracy
+
+# check test accuracy
