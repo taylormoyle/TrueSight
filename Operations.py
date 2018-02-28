@@ -14,16 +14,16 @@ GRID_WIDTH = 13
 ******************************************"""
 
 def pool(inp, p_h, p_w, stride, pad=0):
-    bat, f_m, h, w = inp.shape
+    N, D, h, w = inp.shape
     o_h = int((h + 2 * pad - p_h) / stride + 1)
     o_w = int((w + 2 * pad - p_w) / stride + 1)
 
-    inp_reshaped = inp.reshape(-1, 1, h, w)
+    inp_reshaped = inp.reshape(N*D, 1, h, w)
     inp_col = img_to_col(inp_reshaped, p_h, p_w, o_h, o_w, pad, stride)
 
     max_indices = np.argmax(inp_col, axis=0)
     max_vals = inp_col[max_indices, np.arange(inp_col.shape[1])]
-    max_reshape = max_vals.reshape(o_h, o_w, -1, f_m)
+    max_reshape = max_vals.reshape(o_h, o_w, N, D)
     return max_reshape.transpose(2, 3, 0, 1)
 
 
@@ -41,7 +41,7 @@ def convolve(inp, weights, stride=1, pad=0):
     return output.transpose(3, 0, 1, 2)
 
 
-def batch_normalize(inp, bg, epsilon=1e-8):
+def batch_normalize(inp, bg, mv, training=False, epsilon=1e-8):
     """
     H' = (H - m) / s
     g*H' + b
@@ -52,28 +52,41 @@ def batch_normalize(inp, bg, epsilon=1e-8):
     #mean, variance = tf.nn.moments(inp, axes=[0, 2, 3])
 
     N, D, h, w = inp.shape
-    mean = np.mean(inp, axis=(0, 2, 3))
-    inp_minus_mean = inp - mean[0]
-    variance = np.mean(inp_minus_mean * inp_minus_mean)
-    inv_std = 1 / np.sqrt(variance + epsilon)
-    x_hat = inp_minus_mean * inv_std
+    beta, gamma = bg
 
-    norm_inp = bg[1] * x_hat + bg[0]
+    if training:
+        mean = np.mean(inp, axis=(0, 2, 3))
+        inp_minus_mean = inp - mean.reshape(1, D, 1, 1)
+        variance = np.mean(inp_minus_mean * inp_minus_mean, axis=(0, 2, 3))
+        inv_std = 1 / np.sqrt(variance.reshape(1, D, 1, 1) + epsilon)
+        x_hat = inp_minus_mean * inv_std
+    else:
+        mean, variance = mv
+        inp_minus_mean = inp - mean.reshape(1, D, 1, 1)
+        inv_std = 1 / np.sqrt(variance.reshape(1, D, 1, 1) + epsilon)
+        x_hat = inp_minus_mean * inv_std
 
-    cache = mean, inv_std, x_hat, bg[1]
-    return norm_inp, cache
+    norm_inp = gamma.reshape(1, D, 1, 1) * x_hat + beta.reshape(1, D, 1, 1)
 
+    cache = mean, inv_std, x_hat, gamma, epsilon
+    mean_var = np.stack((mean, variance))
+    return norm_inp, cache, mean_var
+
+
+def full_conn(inp, weights):
+    full_conn = np.matmul(inp, weights)
+    return full_conn
 
 """******************************************
         ACTIVATION FUNCTIONS
 ******************************************"""
 
 def relu(inp):
-    return np.maximum(inp, 0)
+    return np.where(inp >= 0, inp, 0)
 
 
 def leaky_relu(inp, alpha=0.01):
-    return np.maximum(inp, inp*alpha)
+    return np.where(inp >= 0, inp, inp*alpha)
 
 
 def sigmoid(inp):
@@ -109,7 +122,7 @@ def logistic_regression(inp, label):
 
 
 def mean_square_error(inp, label):
-    return 1 / 2 * (tf.square(inp - label))
+    return 1 / 2 * (np.square(inp - label))
 
 
 """******************************************
@@ -125,52 +138,60 @@ def convolve_backprop(delta_out, inp, weights, pad=0, stride=1):
     dO = delta_out.transpose(1, 2, 3, 0)
     dO = dO.reshape(weights.shape[0], -1)
 
-    dx = tf.matmul(weights2d.T, dO)
+    dx = np.matmul(weights2d.transpose(), dO)
     dx = col_to_img(dx, inp.shape, weights.shape[2], weights.shape[3], fm_h, fm_w, pad, stride)
 
-    dw = tf.matmul(dO, inp2d)
-    dw = dw.reshape(weights.shape[0], weights.shape[2], weights.shape[3], weights.shape[1])
-    dw = dw.transpose(0, 3, 1, 2)
+    dw = np.matmul(dO, inp2d.transpose())
+    dw = dw.reshape(weights.shape)
+    #dw = dw.transpose(0, 3, 1, 2)
     return dx, dw
 
 def pool_backprop(error, inp, p_h, p_w, stride, pad=0):
-    bat, f_m, h, w = inp.shape
+    N, D, h, w = inp.shape
     o_h = int((h + 2 * pad - p_h) / stride + 1)
     o_w = int((w + 2 * pad - p_w) / stride + 1)
-    bat, e_d, e_h, e_w = error.shape
 
     inp_reshaped = inp.reshape(-1, 1, h, w)
     inp_col = img_to_col(inp_reshaped, p_h, p_w, o_h, o_w, pad, stride)
 
-    err = error.transpose(2,3,1,0).reshape(-1)
+    err = error.transpose(2,3,0,1).reshape(-1)
 
     max_indices = np.argmax(inp_col, axis=0)
     back = np.zeros_like(inp_col)
-    np.add.at(back, (max_indices, np.arange(inp_col.shape[1])), err)
-    back = col_to_img(back, inp_reshaped.shape, p_h, p_w, e_h, e_w, pad, stride)
-    return back
+    back[max_indices, np.arange(inp_col.shape[1])] = err
+    back = col_to_img(back, inp_reshaped.shape, p_h, p_w, o_h, o_w, pad, stride)
+    dx = back.reshape(inp.shape)
+    return dx
 
 def batch_norm_backprop(delta_out, cache):
-    N, D = delta_out.shape
-    mean, inv_std, x_hat, gamma = cache
+    N, D, _, _ = delta_out.shape
+    mean, inv_std, x_hat, gamma, epsilon = cache
 
     # intermediate partial derivatives
-    dxhat = delta_out * gamma
+    dx_hat = delta_out * gamma.reshape(1, D, 1, 1)
 
     # final partial derivatives
-    dx = (1. / N) * inv_std * (N*dxhat - np.sum(dxhat, axis=0) - x_hat*np.sum(dxhat*x_hat, axis=0))
-    db = np.sum(delta_out, axis=0)
-    dg = np.sum(x_hat*delta_out, axis=0)
+    dx_hat_sum = np.sum(dx_hat, axis=(0, 2, 3))
+    dx_hat2 = np.sum(dx_hat*x_hat, axis=(0, 2, 3))
+    dx = N*dx_hat - dx_hat_sum.reshape(1, D, 1, 1) - x_hat*dx_hat2.reshape(1, D, 1, 1)
+    dx = (1. / N) * inv_std * dx
+    db = np.sum(delta_out, axis=(0, 2, 3))
+    dg = np.sum(x_hat*delta_out, axis=(0, 2, 3))
 
-    return dx, db, dg
+    dbg = np.stack((db, dg))
+    return dx, dbg
 
+def full_conn_backprop(delta_out, inp, weights):
+    dx = np.matmul(delta_out, weights.transpose())
+    dw = np.matmul(inp.transpose(), delta_out)
+    return dx, dw
 
 """******************************************
         DERIVATIVES
 ******************************************"""
 
 def relu_prime(inp):
-    return tf.where(inp < 0, 0, 1)
+    return np.where(inp < 0, 0, 1)
 
 
 def leaky_relu_prime(inp, alpha=0.01):
@@ -231,7 +252,8 @@ def col_to_img(col, inp_shape, f_h, f_w, o_h, o_w, pad, stride):
     N, i_c, i_h, i_w = inp_shape
     z, y, x = get_col_indices(inp_shape,f_h, f_w, o_h, o_w, stride)
 
-    img = np.zeros(inp_shape, dtype=float)
+    h_p, w_p = i_h + 2 * pad, i_w + 2 * pad
+    img = np.zeros((N, i_c, h_p, w_p), dtype=float)
     cols_reshaped = col.reshape(i_c*f_h*f_w, -1, N)
     cols_reshaped = cols_reshaped.transpose(2, 0, 1)
     np.add.at(img, (slice(None), z, y, x), cols_reshaped)
@@ -322,16 +344,23 @@ def initialize_weights(shape):
     weights = tf.random_normal(shape, stddev=std_dev)
     return tf.Variable(weights)
     '''
-    std = 1/sqrt(np.sum(shape))
+    std = sqrt(np.sum(shape))
     weights = np.random.standard_normal(shape) / std
     return weights
 
 
-def update_weights(weights, gradients):
-    return weights - gradients
+def update_weights(weights, gradients, learning_rate, batch_size):
+    return weights - (learning_rate / batch_size * gradients)
 
 
 def zero_pad(inp, pad):
     #return tf.pad(inp, [[pad, pad], [pad, pad]], mode='CONSTANT')
     return np.pad(inp, ((pad, pad), (pad, pad)), 'constant', constant_values=0)
 
+
+def normalize(inp, epsilon=1e-8):
+    mean = np.mean(inp, axis=(2, 3))
+    inp_minus_mean = inp - mean.reshape(-1, 3, 1, 1)
+    variance = np.mean(inp_minus_mean * inp_minus_mean, axis=(2, 3)).reshape(-1, 3, 1, 1)
+    inv_std = 1 / np.sqrt(variance + epsilon)
+    return inp_minus_mean * inv_std
