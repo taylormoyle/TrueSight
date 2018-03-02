@@ -152,11 +152,11 @@ def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
     for w in weights:
         back = weights[w].shape
         w_re = weights[w].reshape(-1)
-        p = rand.randint(0, len(w_re)-1)
 
         n_g = np.zeros(check_num_grads)
         a_g = np.zeros(check_num_grads)
         for i in range(check_num_grads):
+            p = rand.randint(0, len(w_re) - 1)
             w_re[p] += epsilon
             w_re = w_re.reshape(back)
             weights[w] = w_re
