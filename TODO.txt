@@ -1,10 +1,9 @@
 TODO:
 DONE --	implement grad check
-	write training script for classification
+DONE --	write training script for classification
 	run a small training session while checking gradients
 	convert to tensorflow
 	pre-train on pascal dataset for classification
-
 
 	filter out unwanted imgs in detection dataset
 	write script to convert annotations to yolo friendly format
