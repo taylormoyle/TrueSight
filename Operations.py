@@ -122,7 +122,7 @@ def logistic_regression(inp, label):
 
 
 def mean_square_error(inp, label):
-    return 1 / 2 * (np.square(inp - label))
+    return 1 / 2 * (np.square(label - inp))
 
 
 """******************************************
@@ -146,7 +146,7 @@ def convolve_backprop(delta_out, inp, weights, pad=0, stride=1):
     #dw = dw.transpose(0, 3, 1, 2)
     return dx, dw
 
-def pool_backprop(error, inp, p_h, p_w, stride, pad=0):
+def pool_backprop(delta_out, inp, p_h, p_w, stride, pad=0):
     N, D, h, w = inp.shape
     o_h = int((h + 2 * pad - p_h) / stride + 1)
     o_w = int((w + 2 * pad - p_w) / stride + 1)
@@ -154,7 +154,7 @@ def pool_backprop(error, inp, p_h, p_w, stride, pad=0):
     inp_reshaped = inp.reshape(-1, 1, h, w)
     inp_col = img_to_col(inp_reshaped, p_h, p_w, o_h, o_w, pad, stride)
 
-    err = error.transpose(2,3,0,1).reshape(-1)
+    err = delta_out.transpose(2,3,0,1).reshape(-1)
 
     max_indices = np.argmax(inp_col, axis=0)
     back = np.zeros_like(inp_col)
@@ -344,8 +344,15 @@ def initialize_weights(shape):
     weights = tf.random_normal(shape, stddev=std_dev)
     return tf.Variable(weights)
     '''
-    std = sqrt(np.sum(shape))
-    weights = np.random.standard_normal(shape) / std
+    if len(shape) == 4:
+        f, d, h, w = shape
+        w_in = d*h*w
+        w_out = f
+    else:
+        w_in = shape[0]
+        w_out = shape[1]
+    std = 2 / (w_in + w_out)
+    weights = np.random.standard_normal(shape) * std
     return weights
 
 

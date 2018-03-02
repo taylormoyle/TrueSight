@@ -149,11 +149,11 @@ def filter_data(dataset, classes):
 def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
     rel_error = {}
     for w in weights:
-        if w == 'full':
-            continue
         back = weights[w].shape
         w_re = weights[w].reshape(-1)
         len_10 = int(len(w_re) * 1)
+        if w == 'full':
+            len_10 = int(len_10 * 0.00005)
 
         n_g = np.zeros(len_10)
         a_g = np.zeros(len_10)
@@ -178,6 +178,7 @@ def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
             cost_minus = np.sum(cost_minus) / inp.shape[0]
 
             w_re= w_re.reshape(-1)
+            w_re[p] += epsilon
 
             n_g[i] = (cost_plus - cost_minus) / (2 * epsilon)
             a_g[i] = gradients[w].reshape(-1)[p]
