@@ -148,18 +148,15 @@ def filter_data(dataset, classes):
 
 def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
     rel_error = {}
+    check_num_grads = 50
     for w in weights:
         back = weights[w].shape
         w_re = weights[w].reshape(-1)
-        len_10 = int(len(w_re) * 1)
-        if w == 'full':
-            len_10 = int(len_10 * 0.00005)
+        p = rand.randint(0, len(w_re)-1)
 
-        n_g = np.zeros(len_10)
-        a_g = np.zeros(len_10)
-        for i in range(len_10):
-            p = rand.randint(0, len(w_re)-1)
-
+        n_g = np.zeros(check_num_grads)
+        a_g = np.zeros(check_num_grads)
+        for i in range(check_num_grads):
             w_re[p] += epsilon
             w_re = w_re.reshape(back)
             weights[w] = w_re
@@ -183,8 +180,8 @@ def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
             n_g[i] = (cost_plus - cost_minus) / (2 * epsilon)
             a_g[i] = gradients[w].reshape(-1)[p]
 
-        num = np.abs(a_g - n_g)
-        denom = np.abs(a_g) + np.abs(n_g)
+        num = np.linalg.norm(a_g - n_g)
+        denom = np.linalg.norm(a_g) + np.linalg.norm(n_g)
         rel_error[w] = num / denom
     return rel_error
 
@@ -192,10 +189,10 @@ def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
 epoch = 100
 batch_size = 2
 
-infos = [[1, 3, 3, 1, 1],      # output shape (416, 416, 16)
-         [1, 3, 3, 1, 1],      # output shape (416, 416, 16)
+infos = [[16, 3, 3, 1, 1],      # output shape (416, 416, 16)
+         [16, 3, 3, 1, 1],      # output shape (416, 416, 16)
          [0, 2, 2, 2, 0],       # output shape (208, 208, 16)
-         [1, 3, 3, 1, 1], #[32, 3, 3, 1, 1],      # output shape (208, 208, 32)
+         [32, 3, 3, 1, 1],      # output shape (208, 208, 32)
          [32, 3, 3, 1, 1],      # output shape (208, 208, 32)
          [0, 2, 2, 2, 0],       # output shape (104, 104, 32)
          [64, 3, 3, 1, 1],      # output shape (104, 104, 64)
@@ -218,6 +215,7 @@ classes = ['person', 'dog', 'aeroplane', 'bus', 'bird', 'boat', 'car', 'bottle',
 
 net = nn.Neural_Network("facial_recognition", infos, hypers, training=True)
 weights = net.init_facial_rec_weights(infos)
+learning_rate = 0.001
 
 data = prep_data(img_dir, xml_dir)
 data['training'] = filter_data(data['training'], classes)
@@ -237,12 +235,14 @@ for e in range(epoch):
         predictions, cache = net.forward_prop(infos, imgs['images'], weights, training=True)
 
         # back prop
-        grads = net.backward_prop(cache, predictions, imgs['labels'], weights, infos, 0.001)
+        grads = net.backward_prop(cache, predictions, imgs['labels'], weights, infos)
 
         if b % 5 == 0:
             rel_err = grad_check(net, imgs['images'], imgs['labels'], weights, grads, infos)
             for i in rel_err:
-                print('gradient errors: ', rel_err[i])
+                print(epoch, b, i, 'gradient errors: ', rel_err[i])
+
+        weights = net.update_weights(weights, grads, learning_rate, batch_size)
     # check validation accuracy
 
 # check test accuracy
