@@ -7,6 +7,7 @@ import glob
 import os
 import xml.etree.ElementTree as ET
 import random as rand
+import time as t
 
 RES = 416
 DELTA_HUE = 0.3
@@ -17,6 +18,7 @@ MIN_DELTA_SATURATION = 0.3
 # Gather files, attach labels to their associated filenames, and return an array of tuples [(filename, label)]
 def prep_data(img_dir, xml_dir, test_percent=10, validation_percent=10):
     dataset = []
+    labels = {}
     img_path = os.path.join(img_dir, "*")
     img_files = glob.glob(img_path)
     sorted(img_files)
@@ -27,8 +29,7 @@ def prep_data(img_dir, xml_dir, test_percent=10, validation_percent=10):
 
     for f, x in zip(img_files, xml_files):
         _, name = os.path.split(f)
-        labels = []
-        # xml_file = name[:-4] + ".xml"
+        img_labels = []
 
         tree = ET.parse(x)
         root = tree.getroot()
@@ -53,14 +54,11 @@ def prep_data(img_dir, xml_dir, test_percent=10, validation_percent=10):
                         midpoints.append((int(((ymax - ymin) / 2)), int(((xmax - xmin) / 2))))
 
                 for l, m in zip(label, midpoints):
-                    labels.append({'name': l, 'midpoint': m})
+                    img_labels.append({'name': l, 'midpoint': m})
 
-        data = {'filename': f, 'labels': labels}
-        dataset.append(data)
-        labels = []
-        # print(data)
-
-    rand.shuffle(dataset)
+        #data = {'filename': f, 'labels': labels}
+        dataset.append(f)
+        labels[f] = img_labels
 
     num_validation_images = int(len(dataset) * (validation_percent / 100))
     num_test_images = int(len(dataset) * (test_percent / 100))
@@ -70,55 +68,44 @@ def prep_data(img_dir, xml_dir, test_percent=10, validation_percent=10):
     training_dataset = dataset[(num_test_images + num_validation_images):]
     dataset = {'training': training_dataset, 'test': test_dataset, 'validation': validation_dataset}
 
-    return dataset
+    return dataset, labels
 
 
 # Loads each file as np RGB array, and returns an array of tuples [(image, label)]
-def load_data(data, batch_size, batch):
-    images = {'images': np.zeros((batch_size, 3, RES, RES)), 'labels': []}
-    for i in range(batch_size):
-        im = Image.open(data[i*batch]['filename'])
-        img = resize_img(im)
-        img = img.transpose((2, 0, 1))
-        images['images'][i] = img
-        images['labels'].append(data[i*batch]['labels'])
-    return images
+def load_data(filenames, epochs):
+    filename_queue = tf.train.string_input_producer(filenames)
+    reader = tf.WholeFileReader()
+    key, value = reader.read(filename_queue)
+
+    image = tf.image.decode_jpeg(value)
+    image = resize_img(image)
+    image = tf.transpose(image, [2, 0, 1])
+    return image, key
 
 
 # Resize image to a 416 x 416 resolution
 def resize_img(img):
-    img.thumbnail([RES, RES], Image.ANTIALIAS)
-    img = np.array(img)
-    height, width, _ = img.shape
-    pad_top = 0
-    pad_bottom = 0
-    pad_left = 0
-    pad_right = 0
-    if height < RES:
-        diff = RES - height
-        pad = int(diff / 2)
-        pad_top = pad
-        if diff % 2 == 0:
-            pad_bottom = pad
-        else:
-            pad_bottom = pad + 1
-    if width < RES:
-        diff = RES - width
-        pad = int(diff / 2)
-        pad_left = pad
-        if diff % 2 == 0:
-            pad_right = pad
-        else:
-            pad_right = pad + 1
-    img = np.pad(img, ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)), mode='constant')
-    return img
+    h, w, _ = img.get_shape()
+    new_h = 0
+    new_w = 0
+    if h > w:
+        new_h = RES
+        new_w = int((w / h) * new_h)
+    elif w > h:
+        new_w = RES
+        new_h = int((w / h) / new_w)
+    else:
+        new_h = RES
+        new_w = RES
+
+    img_resized = tf.image.resize_images(img, [new_h, new_w])
+    img_resized = tf.image.resize_image_with_crop_or_pad(img_resized, RES, RES)
+
+    return img_resized
 
 
 # Perform transformations, normalize images, return array of tuples [(norm_image, label)]
 def process_data(images):
-    # Resize all images to 416 x 416
-    #for i in range(images.shape):
-    #    resize_img(images[i])
 
     # Perform Transformations on all images to diversify dataset
     images = tf.transpose(images, (0, 2, 3, 1))
@@ -133,22 +120,24 @@ def process_data(images):
     return images
 
 
-def filter_data(dataset, classes):
-    ret_data = []
-    for img in dataset:
-        if len(img['labels']) == 1:
-            label = np.zeros(20)
-            name = img['labels'][0]['name']
-            l = classes.index(name)
-            label[l] = 1
+def filter_data(labels, classes):
+    ret_imgs = []
+    ret_lbls = {}
+    for img in labels:
+        if len(labels[img]) == 1:
+            label = np.zeros(len(classes))
+            name = labels[img][0]['name']
+            lbl = classes.index(name)
+            label[lbl] = 1
 
-            ret_data.append({'filename': img['filename'], 'labels': label})
-    return ret_data
+            ret_imgs.append(img)
+            ret_lbls[img] = label
+    return ret_imgs, ret_lbls
 
 
 def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
     rel_error = {}
-    check_num_grads = 50
+    check_num_grads = 15
     for w in weights:
         back = weights[w].shape
         w_re = weights[w].reshape(-1)
@@ -174,7 +163,7 @@ def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
             cost_minus = op.mean_square_error(cost_minus, labels)
             cost_minus = np.sum(cost_minus) / inp.shape[0]
 
-            w_re= w_re.reshape(-1)
+            w_re = w_re.reshape(-1)
             w_re[p] += epsilon
 
             n_g[i] = (cost_plus - cost_minus) / (2 * epsilon)
@@ -186,8 +175,10 @@ def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
     return rel_error
 
 ''''     TRAINING SCRIPT     '''
-epoch = 100
-batch_size = 2
+
+s = t.time()
+epoch = 30
+batch_size = 5
 
 infos = [[16, 3, 3, 1, 1],      # output shape (416, 416, 16)
          [16, 3, 3, 1, 1],      # output shape (416, 416, 16)
@@ -240,9 +231,43 @@ for e in range(epoch):
         if b % 5 == 0:
             rel_err = grad_check(net, imgs['images'], imgs['labels'], weights, grads, infos)
             for i in rel_err:
-                print(epoch, b, i, 'gradient errors: ', rel_err[i])
+                print(e, b, i, 'gradient errors: ', rel_err[i])
 
         weights = net.update_weights(weights, grads, learning_rate, batch_size)
     # check validation accuracy
 
 # check test accuracy
+
+print(t.time() - s)
+
+'''    TENSORFLOW TRAINGING SCRIPT   '''
+"""
+dataset, labels = prep_data(img_dir, xml_dir)
+dataset, labels = filter_data(labels, classes)
+
+imgs, filenames = load_data(dataset, 10)
+
+with tf.Session() as sess:
+    sess.run(tf.global_variables_initializer())
+
+    coord = tf.train.Coordinator()
+    threads = tf.train.start_queue_runners(coord=coord)
+
+    s = t.time()
+    images = np.empty((3, 416, 416))
+    fnames = []
+    for _ in labels:
+        img, fn = sess.run((imgs, filenames))
+        images = np.append(images, img)
+        fnames.append(fn)
+
+        #print(img.shape)
+        #print(fn)
+
+    print(images.shape)
+    print(len(fnames))
+    print("runtime: ", t.time() - s)
+
+    coord.request_stop()
+    coord.join(threads)
+"""

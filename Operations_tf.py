@@ -14,37 +14,37 @@ GRID_WIDTH = 13
 ******************************************"""
 
 def pool(inp, p_h, p_w, stride, pad=0):
-    N, D, h, w = inp.shape
-    o_h = int((h + 2 * pad - p_h) / stride + 1)
-    o_w = int((w + 2 * pad - p_w) / stride + 1)
+    N, D, h, w = tf.shape(inp)
+    o_h = tf.constant(((h + 2 * pad - p_h) / stride + 1), dtype=tf.int32)
+    o_w = tf.constant(((w + 2 * pad - p_w) / stride + 1), dtype=tf.int32)
 
-    inp_reshaped = inp.reshape(N*D, 1, h, w)
+    inp_reshaped = tf.reshape(inp, [N*D, 1, h, w])
     inp_col = img_to_col(inp_reshaped, p_h, p_w, o_h, o_w, pad, stride)
 
-    max_indices = np.argmax(inp_col, axis=0)
-    max_vals = inp_col[max_indices, np.arange(inp_col.shape[1])]
-    max_reshape = max_vals.reshape(o_h, o_w, N, D)
-    return max_reshape.transpose(2, 3, 0, 1)
+    max_indices = tf.argmax(inp_col, axis=0)
+    max_vals = tf.gather(inp_col, [max_indices, tf.range(tf.shape(inp_col)[1])])
+    max_reshape = tf.reshape(max_vals, [o_h, o_w, N, D])
+    return tf.transpose(max_reshape, perm=[2, 3, 0, 1])
 
 
 def convolve(inp, weights, stride=1, pad=0):
-    bat, i_c, i_h, i_w = inp.shape
-    n_f, n_c, f_h, f_w = weights.shape
-    o_h = int((i_h + 2 * pad - f_h) / stride + 1)
-    o_w = int((i_w + 2 * pad - f_w) / stride + 1)
+    bat, i_c, i_h, i_w = tf.shape(inp)
+    n_f, n_c, f_h, f_w = tf.shape(weights)
+    o_h = tf.constant(((i_h + 2 * pad - f_h) / stride + 1), dtype=tf.int32)
+    o_w = tf.constant(((i_w + 2 * pad - f_w) / stride + 1), dtype=tf.int32)
 
     inp_col = img_to_col(inp, f_w, f_h, o_h, o_w, pad, stride)
-    w_col = weights.reshape(n_f, -1)
+    w_col = tf.reshape(weights, [n_f, -1])
 
-    output = np.matmul(w_col, inp_col)
-    output = output.reshape(n_f, o_h, o_w, bat)
-    return output.transpose(3, 0, 1, 2)
+    output = tf.matmul(w_col, inp_col)
+    output = tf.reshape(output, [n_f, o_h, o_w, bat])
+    return tf.transpose(output, perm=[3, 0, 1, 2])
 
 
-def batch_normalize(inp, bg, mv, training=False, epsilon=1e-8):
+def batch_normalize(inp, bg, mv, training=False, epsilon=1e-8):                          #**********************************************
     #mean, variance = tf.nn.moments(inp, axes=[0, 2, 3])
 
-    N, D, h, w = inp.shape
+    N, D, h, w = tf.shape(inp)
     beta, gamma = bg
 
     if training:
@@ -67,7 +67,7 @@ def batch_normalize(inp, bg, mv, training=False, epsilon=1e-8):
 
 
 def full_conn(inp, weights):
-    full_conn = np.matmul(inp, weights)
+    full_conn = tf.matmul(inp, weights)
     return full_conn
 
 """******************************************
@@ -75,15 +75,15 @@ def full_conn(inp, weights):
 ******************************************"""
 
 def relu(inp):
-    return np.where(inp >= 0, inp, 0)
+    return tf.where(inp >= 0, inp, 0)
 
 
 def leaky_relu(inp, alpha=0.01):
-    return np.where(inp >= 0, inp, inp*alpha)
+    return tf.where(inp >= 0, inp, inp*alpha)
 
 
 def sigmoid(inp):
-    return 1 / (1 + (np.exp(-inp)))
+    return 1 / (1 + (tf.exp(-inp)))
 
 
 """******************************************
@@ -91,8 +91,8 @@ def sigmoid(inp):
 ******************************************"""
 
 def cost_function(inp, label, batch_size, lambd_coord, lambd_noobj):
-    inp_reshaped = inp.reshape(169, -1)
-    label_reshaped = label.reshape(169, -1)
+    inp_reshaped = tf.reshape(inp, [169, -1])
+    label_reshaped = tf.reshape(label, [169, -1])
 
     xy_cost = 0
     wh_cost = 0
@@ -101,11 +101,11 @@ def cost_function(inp, label, batch_size, lambd_coord, lambd_noobj):
 
     for i, l in zip(inp_reshaped, label_reshaped):
         if l[0]:
-            xy_cost += mean_square_error(i[1] - l[1]) + mean_square_error(i[2] - l[2])
-            wh_cost += mean_square_error(tf.sqrt(i[3]) - tf.sqrt(l[3])) + mean_square_error(tf.sqrt(i[4]) - tf.sqrt(l[4]))
-            oc_cost += logistic_regression(i[0] - l[0])
+            xy_cost = xy_cost + mean_square_error(i[1], l[1]) + mean_square_error(i[2], l[2])
+            wh_cost = wh_cost + mean_square_error(tf.sqrt(i[3]), tf.sqrt(l[3])) + mean_square_error(tf.sqrt(i[4]), tf.sqrt(l[4]))
+            oc_cost = oc_cost + logistic_regression(i[0], l[0])
         else:
-            nc_cost += logistic_regression(i[0] - l[0])
+            nc_cost = nc_cost + logistic_regression(i[0], l[0])
 
     return (lambd_coord * (xy_cost + wh_cost)) + oc_cost + (lambd_noobj * nc_cost) / batch_size
 
@@ -115,7 +115,7 @@ def logistic_regression(inp, label):
 
 
 def mean_square_error(inp, label):
-    return 1 / 2 * (np.square(label - inp))
+    return 1 / 2 * (tf.square(label - inp))
 
 
 """******************************************
@@ -123,41 +123,42 @@ def mean_square_error(inp, label):
 ******************************************"""
 
 def convolve_backprop(delta_out, inp, weights, pad=0, stride=1):
-    fm_h = int((inp.shape[2] + 2 * pad - weights.shape[2]) / stride + 1)
-    fm_w = int((inp.shape[3] + 2 * pad - weights.shape[3]) / stride + 1)
-    weights2d = weights.reshape(weights.shape[0], -1)
-    inp2d = img_to_col(inp, weights.shape[2], weights.shape[3], fm_h, fm_w, pad, stride)
+    N, D, h, w = tf.shape(inp)
+    n_fm, n_c, h_w, w_w = tf.shape(weights)
+    fm_h = tf.constant(((h + 2 * pad - h_w) / stride + 1), dtype=tf.int32)
+    fm_w = tf.constant(((w + 2 * pad - w_w) / stride + 1), dtype=tf.int32)
+    weights2d = tf.reshape(weights, [n_fm, -1])
+    inp2d = img_to_col(inp, h_w, w_w, fm_h, fm_w, pad, stride)
 
-    dO = delta_out.transpose(1, 2, 3, 0)
-    dO = dO.reshape(weights.shape[0], -1)
+    dO = tf.transpose(delta_out, perm=[1, 2, 3, 0])
+    dO = tf.reshape(dO, [n_fm, -1])
 
-    dx = np.matmul(weights2d.transpose(), dO)
-    dx = col_to_img(dx, inp.shape, weights.shape[2], weights.shape[3], fm_h, fm_w, pad, stride)
+    dx = tf.matmul(tf.transpose(weights2d, perm=[1, 0]), dO)
+    dx = col_to_img(dx, inp.shape, h_w, w_w, fm_h, fm_w, pad, stride)
 
-    dw = np.matmul(dO, inp2d.transpose())
-    dw = dw.reshape(weights.shape)
-    #dw = dw.transpose(0, 3, 1, 2)
+    dw = tf.matmul(dO, tf.transpose(inp2d, perm=[1, 0]))
+    dw = tf.reshape(dw, [tf.shape(weights)])
     return dx, dw
 
 def pool_backprop(delta_out, inp, p_h, p_w, stride, pad=0):
-    N, D, h, w = inp.shape
-    o_h = int((h + 2 * pad - p_h) / stride + 1)
-    o_w = int((w + 2 * pad - p_w) / stride + 1)
+    N, D, h, w = tf.shape(inp)
+    o_h = tf.constant(((h + 2 * pad - p_h) / stride + 1), dtype=tf.int32)
+    o_w = tf.constant(((w + 2 * pad - p_w) / stride + 1), dtype=tf.int32)
 
-    inp_reshaped = inp.reshape(-1, 1, h, w)
+    inp_reshaped = tf.reshape(inp, [-1, 1, h, w])
     inp_col = img_to_col(inp_reshaped, p_h, p_w, o_h, o_w, pad, stride)
 
-    err = delta_out.transpose(2,3,0,1).reshape(-1)
+    err = tf.reshape(tf.transpose(delta_out, perm=[2, 3, 0, 1]), -1)
 
-    max_indices = np.argmax(inp_col, axis=0)
-    back = np.zeros_like(inp_col)
-    back[max_indices, np.arange(inp_col.shape[1])] = err
-    back = col_to_img(back, inp_reshaped.shape, p_h, p_w, o_h, o_w, pad, stride)
-    dx = back.reshape(inp.shape)
+    max_indices = tf.argmax(inp_col, axis=0)
+    back = tf.zeros_like(inp_col)
+    back[max_indices, tf.range(tf.shape(inp_col)[1])] = err                     #***************************************************************
+    back = col_to_img(back, tf.shape(inp_reshaped), p_h, p_w, o_h, o_w, pad, stride)
+    dx = tf.reshape(back, tf.shape(inp))
     return dx
 
-def batch_norm_backprop(delta_out, cache):
-    N, D, _, _ = delta_out.shape
+def batch_norm_backprop(delta_out, cache):                                       #**************************************************************
+    N, D, _, _ = tf.shape(delta_out)
     mean, inv_std, x_hat, gamma, epsilon = cache
 
     # intermediate partial derivatives
@@ -175,8 +176,8 @@ def batch_norm_backprop(delta_out, cache):
     return dx, dbg
 
 def full_conn_backprop(delta_out, inp, weights):
-    dx = np.matmul(delta_out, weights.transpose())
-    dw = np.matmul(inp.transpose(), delta_out)
+    dx = tf.matmul(delta_out, tf.transpose(weights, perm=[1, 0]))
+    dw = tf.matmul(tf.transpose(inp, perm=[1, 0]), delta_out)
     return dx, dw
 
 """******************************************
@@ -184,7 +185,7 @@ def full_conn_backprop(delta_out, inp, weights):
 ******************************************"""
 
 def relu_prime(inp):
-    return np.where(inp < 0, 0, 1)
+    return tf.where(inp < 0, 0, 1)
 
 
 def leaky_relu_prime(inp, alpha=0.01):
@@ -212,7 +213,7 @@ def mse_wh_prime(inp, label):
         UTILITY
 ******************************************"""
 
-def get_col_indices(inp_shape, f_h, f_w, o_h, o_w, stride):
+def get_col_indices(inp_shape, f_h, f_w, o_h, o_w, stride):                            #****************************************************
     _, i_c, i_h, i_w = inp_shape
 
     # z axis (channel)
@@ -232,13 +233,14 @@ def get_col_indices(inp_shape, f_h, f_w, o_h, o_w, stride):
 
 
 def img_to_col(inp, f_h, f_w, o_h, o_w, pad, stride):
-    z, y, x = get_col_indices(inp.shape, f_h, f_w, o_h, o_w, stride)
+    z, y, x = get_col_indices(tf.shape(inp), f_h, f_w, o_h, o_w, stride)
 
-    inp_padded = np.pad(inp, ((0, 0), (0, 0), (pad, pad), (pad, pad)), mode='constant')
+    inp_padded = tf.pad(inp, [[0, 0], [0, 0], [pad, pad], [pad, pad]], mode='CONSTANT')
 
-    col = inp_padded[:, z, y, x]
-    col = col.transpose(1, 2, 0)
-    return col.reshape(f_h * f_w * inp.shape[1], -1)
+    indices = tf.range(tf.shape(inp)[0])
+    col = tf.gather(inp_padded, [indices, z, y, x])
+    col = tf.transpose(col, perm=[1, 2, 0])
+    return tf.reshape(col, [(f_h * f_w * tf.shape(inp)[1]), -1])
 
 
 def col_to_img(col, inp_shape, f_h, f_w, o_h, o_w, pad, stride):
@@ -246,10 +248,10 @@ def col_to_img(col, inp_shape, f_h, f_w, o_h, o_w, pad, stride):
     z, y, x = get_col_indices(inp_shape,f_h, f_w, o_h, o_w, stride)
 
     h_p, w_p = i_h + 2 * pad, i_w + 2 * pad
-    img = np.zeros((N, i_c, h_p, w_p), dtype=float)
-    cols_reshaped = col.reshape(i_c*f_h*f_w, -1, N)
-    cols_reshaped = cols_reshaped.transpose(2, 0, 1)
-    np.add.at(img, (slice(None), z, y, x), cols_reshaped)
+    img = tf.zeros((N, i_c, h_p, w_p), dtype=tf.float32)
+    cols_reshaped = tf.reshape(col, [(i_c * f_h * f_w), -1, N])
+    cols_reshaped = tf.transpose(cols_reshaped, perm=[2, 0, 1])
+    np.add.at(img, (slice(None), z, y, x), cols_reshaped)                             #************************************************************
 
     if pad == 0:
         return img
@@ -264,7 +266,7 @@ def intersection_over_union(box1, box2, box1_cell, box2_cell, img_width, img_hei
 
 def _find_intersection(box1, box2, box1_cell, box2_cell, width, height):
     TL1, TR1, BL1, BR1 = _find_corners(box1, box1_cell)
-    b1 = np.zeros((height, width))
+    b1 = tf.zeros((height, width))
     b1x1 = TL1[1]
     b1x2 = TR1[1]
     b1y1 = TL1[0]
@@ -272,19 +274,19 @@ def _find_intersection(box1, box2, box1_cell, box2_cell, width, height):
     b1[b1y1:b1y2, b1x1:b1x2] = 1
 
     TL2, TR2, BL2, BR2 = _find_corners(box2, box2_cell)
-    b2 = np.zeros((height, width))
+    b2 = tf.zeros((height, width))
     b2x1 = TL2[1]
     b2x2 = TR2[1]
     b2y1 = TL2[0]
     b2y2 = BL2[0]
     b2[b2y1:b2y2, b2x1:b2x2] = 1
 
-    return np.sum(b1 * b2)
+    return tf.reduce_sum(b1 * b2)
 
 
 def _find_corners(box, cell):
-    bb_h = np.floor(box[3] * IMG_HEIGHT)
-    bb_w = np.floor(box[4] * IMG_WIDTH)
+    bb_h = tf.floor(box[3] * IMG_HEIGHT)
+    bb_w = tf.floor(box[4] * IMG_WIDTH)
     y_mid = box[1] * CELL_HEIGHT
     x_mid = box[2] * CELL_WIDTH
 
@@ -310,42 +312,37 @@ def _find_corners(box, cell):
 
 
 def non_max_suppression(bounding_boxes, conf_threshold, IoU_threshold):
-    bounding_boxes = bounding_boxes.reshape(-1, 5)
+    bounding_boxes = tf.reshape(bounding_boxes, [-1, 5])
     bnd_boxes = bounding_boxes
-    predictions = np.array([], dtype=int)
+    predictions = tf.zeros(0, dtype=tf.int32)
     i = 0
-    while i < bnd_boxes.shape[0]:
+    while i < tf.shape(bnd_boxes)[0]:
         if bnd_boxes[i][0] < conf_threshold:
             bnd_boxes[i][0] = 0
             i = i + 1
         else:
-            p = np.argmax(bnd_boxes.T[0], axis=0)
-            predictions = np.append(predictions, p)
+            p = tf.argmax(tf.transpose(bnd_boxes, perm=[1, 0])[0], axis=0)
+            predictions = tf.reshape(tf.concat(predictions, p), [-1])
             bnd_boxes[predictions[-1]][0] = 0
             for b in range(bnd_boxes):
-                if b[0] != 0:
+                if bnd_boxes[b][0] != 0:
                     overlap = intersection_over_union(bnd_boxes[b], bnd_boxes[predictions[-1]], b, predictions[-1], IMG_HEIGHT, IMG_WIDTH)
                     if overlap >= IoU_threshold:
-                        b[0] = 0
+                        bnd_boxes[b][0] = 0
                         i = i + 1
-    return bounding_boxes[predictions]
+    return tf.gather(bounding_boxes, predictions)
 
 
 def initialize_weights(shape):
-    '''
-    std_dev = 1 / (sqrt(tf.cumprod(shape)[-1]))
-    weights = tf.random_normal(shape, stddev=std_dev)
-    return tf.Variable(weights)
-    '''
     if len(shape) == 4:
         f, d, h, w = shape
-        w_in = d*h*w
+        w_in = d * h * w
         w_out = f
     else:
         w_in = shape[0]
         w_out = shape[1]
     std = 2 / (w_in + w_out)
-    weights = np.random.standard_normal(shape) * std
+    weights = tf.truncated_normal(shape, stddev=std)
     return weights
 
 
@@ -353,14 +350,9 @@ def update_weights(weights, gradients, learning_rate, batch_size):
     return weights - (learning_rate / batch_size * gradients)
 
 
-def zero_pad(inp, pad):
-    #return tf.pad(inp, [[pad, pad], [pad, pad]], mode='CONSTANT')
-    return np.pad(inp, ((pad, pad), (pad, pad)), 'constant', constant_values=0)
-
-
 def normalize(inp, epsilon=1e-8):
-    mean = np.mean(inp, axis=(2, 3))
-    inp_minus_mean = inp - mean.reshape(-1, 3, 1, 1)
-    variance = np.mean(inp_minus_mean * inp_minus_mean, axis=(2, 3)).reshape(-1, 3, 1, 1)
-    inv_std = 1 / np.sqrt(variance + epsilon)
+    mean = tf.reduce_mean(inp, axis=[2, 3])
+    inp_minus_mean = inp - tf.reshape(mean, [-1, 3, 1, 1])
+    variance = tf.reshape(tf.reduce_mean(inp_minus_mean * inp_minus_mean, axis=[2, 3]), [-1, 3, 1, 1])
+    inv_std = 1 / tf.sqrt(variance + epsilon)
     return inp_minus_mean * inv_std
