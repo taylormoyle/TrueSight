@@ -137,15 +137,16 @@ def filter_data(labels, classes):
 
 def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
     rel_error = {}
-    check_num_grads = 15
+    check_num_grads = 5
     for w in weights:
+        print("weights %s.." % w)
         back = weights[w].shape
         w_re = weights[w].reshape(-1)
 
         n_g = np.zeros(check_num_grads)
         a_g = np.zeros(check_num_grads)
         for i in range(check_num_grads):
-            p = rand.randint(0, len(w_re) - 1)
+            p = rand.randint(0, len(w_re)-1)
             w_re[p] += epsilon
             w_re = w_re.reshape(back)
             weights[w] = w_re
@@ -163,7 +164,7 @@ def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
             cost_minus = op.mean_square_error(cost_minus, labels)
             cost_minus = np.sum(cost_minus) / inp.shape[0]
 
-            w_re = w_re.reshape(-1)
+            w_re= w_re.reshape(-1)
             w_re[p] += epsilon
 
             n_g[i] = (cost_plus - cost_minus) / (2 * epsilon)
@@ -208,8 +209,8 @@ net = nn.Neural_Network("facial_recognition", infos, hypers, training=True)
 weights = net.init_facial_rec_weights(infos)
 learning_rate = 0.001
 
-data = prep_data(img_dir, xml_dir)
-data['training'] = filter_data(data['training'], classes)
+data, lbls = prep_data(img_dir, xml_dir)
+data['training'], labels = filter_data(lbls, classes)
 for e in range(epoch):
     # shuffle data
     dataset = data['training']

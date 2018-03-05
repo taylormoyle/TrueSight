@@ -41,29 +41,35 @@ def convolve(inp, weights, stride=1, pad=0):
     return output.transpose(3, 0, 1, 2)
 
 
-def batch_normalize(inp, bg, mv, training=False, epsilon=1e-8):
-    #mean, variance = tf.nn.moments(inp, axes=[0, 2, 3])
+def batch_normalize(inp, beta, gamma, running_mean_var, training=False, epsilon=1e-8):
+    N, D, H, W = inp.shape
+    running_mean, running_variance = running_mean_var
 
-    N, D, h, w = inp.shape
-    beta, gamma = bg
+    M = N*H*W
+    x = inp.transpose(0, 2, 3, 1).reshape(M, D)
 
     if training:
-        mean = np.mean(inp, axis=(0, 2, 3))
-        inp_minus_mean = inp - mean.reshape(1, D, 1, 1)
-        variance = np.mean(inp_minus_mean * inp_minus_mean, axis=(0, 2, 3))
-        inv_std = 1 / np.sqrt(variance.reshape(1, D, 1, 1) + epsilon)
-        x_hat = inp_minus_mean * inv_std
+        mean = (1. / M) * np.sum(x, axis=0)
+        xmu = x - mean
+        variance = (1. / M) * np.sum(xmu * xmu, axis=0) + epsilon
+        inv_std = 1. / np.sqrt(variance)
+        x_hat = xmu * inv_std
+
+        if running_mean is None:
+            running_mean = mean
+            running_variance = variance
+        else:
+            running_mean = 0.9 * running_mean + 0.1 * mean
+            running_variance = 0.9 * running_variance + 0.1 * variance
     else:
-        mean, variance = mv
-        inp_minus_mean = inp - mean.reshape(1, D, 1, 1)
-        inv_std = 1 / np.sqrt(variance.reshape(1, D, 1, 1) + epsilon)
-        x_hat = inp_minus_mean * inv_std
+        xmu = x - running_mean
+        inv_std = np.sqrt(running_variance)
+        x_hat = xmu * inv_std
 
-    norm_inp = gamma.reshape(1, D, 1, 1) * x_hat + beta.reshape(1, D, 1, 1)
-
-    cache = mean, inv_std, x_hat, gamma, epsilon
-    mean_var = np.stack((mean, variance))
-    return norm_inp, cache, mean_var
+    norm_inp = gamma * x_hat + beta
+    norm_inp = norm_inp.reshape(N, H, W, D).transpose(0, 3, 1, 2)
+    cache = (xmu, inv_std, x_hat, gamma)
+    return norm_inp, cache, (running_mean, running_variance)
 
 
 def full_conn(inp, weights):
@@ -83,7 +89,8 @@ def leaky_relu(inp, alpha=0.01):
 
 
 def sigmoid(inp):
-    return 1 / (1 + (np.exp(-inp)))
+    inp = np.clip(inp, -500, 500)
+    return 1. / (1 + (np.exp(-inp)))
 
 
 """******************************************
@@ -157,22 +164,24 @@ def pool_backprop(delta_out, inp, p_h, p_w, stride, pad=0):
     return dx
 
 def batch_norm_backprop(delta_out, cache):
-    N, D, _, _ = delta_out.shape
-    mean, inv_std, x_hat, gamma, epsilon = cache
+    N, D, H, W = delta_out.shape
+    xmu, inv_std, x_hat, gamma = cache
 
-    # intermediate partial derivatives
-    dx_hat = delta_out * gamma.reshape(1, D, 1, 1)
+    M = N*H*W
+    dO = delta_out.transpose(0, 2, 3, 1).reshape(M, D)
 
-    # final partial derivatives
-    dx_hat_sum = np.sum(dx_hat, axis=(0, 2, 3))
-    dx_hat2 = np.sum(dx_hat*x_hat, axis=(0, 2, 3))
-    dx = N*dx_hat - dx_hat_sum.reshape(1, D, 1, 1) - x_hat*dx_hat2.reshape(1, D, 1, 1)
-    dx = (1. / N) * inv_std * dx
-    db = np.sum(delta_out, axis=(0, 2, 3))
-    dg = np.sum(x_hat*delta_out, axis=(0, 2, 3))
+    db = np.sum(dO, axis=0)
+    dg = np.sum(x_hat * dO, axis=0)
 
-    dbg = np.stack((db, dg))
-    return dx, dbg
+    dx_hat = dO * gamma
+
+    dx1 = x_hat * np.sum(dx_hat * x_hat, axis=0)
+    dx2 = M * dx_hat - np.sum(dx_hat, axis=0)
+    dx = 1. / M * inv_std * (dx2 - dx1)
+
+    dx = dx.reshape(N, H, W, D).transpose(0, 3, 1, 2)
+
+    return dx, db, dg
 
 def full_conn_backprop(delta_out, inp, weights):
     dx = np.matmul(delta_out, weights.transpose())
@@ -341,9 +350,12 @@ def initialize_weights(shape):
         f, d, h, w = shape
         w_in = d*h*w
         w_out = f
-    else:
+    elif len(shape) == 2:
         w_in = shape[0]
         w_out = shape[1]
+    else:
+        w_in = shape[0]
+        w_out = 0
     std = 2 / (w_in + w_out)
     weights = np.random.standard_normal(shape) * std
     return weights
