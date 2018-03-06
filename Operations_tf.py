@@ -213,21 +213,21 @@ def mse_wh_prime(inp, label):
         UTILITY
 ******************************************"""
 
-def get_col_indices(inp_shape, f_h, f_w, o_h, o_w, stride):                            #****************************************************
+def get_col_indices(inp_shape, f_h, f_w, o_h, o_w, stride):
     _, i_c, i_h, i_w = inp_shape
 
     # z axis (channel)
-    z = np.repeat(np.arange(i_c), f_w * f_h).reshape(-1, 1)
+    z = tf.reshape(tf.tile(tf.reshape(tf.range(i_c), [-1, 1]), [1, f_h * f_w]), [-1, 1])
 
     # y index
-    y0 = np.tile(np.repeat(np.arange(f_h), f_w), i_c)
-    y1 = stride * np.repeat(np.arange(o_h), o_w)
-    y = y0.reshape(-1, 1) + y1.reshape(1, -1)
+    y0 = tf.tile(tf.reshape(tf.tile(tf.reshape(tf.range(f_h), [-1, 1]), [1, f_w]), [-1]), [i_c])
+    y1 = stride * tf.reshape(tf.tile(tf.reshape(tf.range(o_h), [-1, 1]), [1, o_w]), [-1])
+    y = tf.reshape(y0, [-1, 1]) + tf.reshape(y1, [1, -1])
 
     # x index
-    x0 = np.tile(np.arange(f_w), f_h * i_c)
-    x1 = stride * np.tile(np.arange(o_w), o_h)
-    x = x0.reshape(-1, 1) + x1.reshape(1, -1)
+    x0 = tf.tile(tf.range(f_w), [f_h * i_c])
+    x1 = stride * tf.tile(tf.range(o_w), [o_h])
+    x = tf.reshape(x0, [-1, 1]) + tf.reshape(x1, [1, -1])
 
     return z, y, x
 
@@ -248,14 +248,31 @@ def col_to_img(col, inp_shape, f_h, f_w, o_h, o_w, pad, stride):
     z, y, x = get_col_indices(inp_shape,f_h, f_w, o_h, o_w, stride)
 
     h_p, w_p = i_h + 2 * pad, i_w + 2 * pad
-    img = tf.zeros((N, i_c, h_p, w_p), dtype=tf.float32)
-    cols_reshaped = tf.reshape(col, [(i_c * f_h * f_w), -1, N])
-    cols_reshaped = tf.transpose(cols_reshaped, perm=[2, 0, 1])
-    np.add.at(img, (slice(None), z, y, x), cols_reshaped)                             #************************************************************
+    img = np.zeros((N, i_c, h_p, w_p), dtype=float)
+    cols_reshaped = col.reshape(i_c*f_h*f_w, -1, N)
+    cols_reshaped = cols_reshaped.transpose(2, 0, 1)
+    np.add.at(img, (slice(None), z, y, x), cols_reshaped)
+    #print(img)
+    #print(cols_reshaped.shape)
 
-    if pad == 0:
-        return img
-    return img[:, :, pad:-pad, pad:-pad]
+    with tf.Session() as sess:
+        ref = np.zeros((N, i_c, h_p, w_p), dtype=float)
+        ref = tf.Variable(ref)
+        #print(ref.shape, "ref")
+        #print(indices.shape, "indices")
+        #print(updates.shape, "updates")
+        sess.run(tf.global_variables_initializer())
+
+        def add_at(i, z, x, y, c):
+            np.add.at(i, (slice(None), z, y, x), c)
+            return i.astype(np.float32)
+
+        i = np.zeros((N, i_c, h_p, w_p), dtype=float)
+        a = tf.py_func(add_at, [i, z, y, x, cols_reshaped], tf.float32)
+
+        A = sess.run(a).transpose(0, 1, 3, 2)
+
+    return img[:, :, pad:-pad, pad:-pad], A[:, :, pad:-pad, pad:-pad]
 
 
 def intersection_over_union(box1, box2, box1_cell, box2_cell, img_width, img_height):
