@@ -41,29 +41,33 @@ def convolve(inp, weights, stride=1, pad=0):
     return tf.transpose(output, perm=[3, 0, 1, 2])
 
 
-def batch_normalize(inp, bg, mv, training=False, epsilon=1e-8):                          #**********************************************
-    #mean, variance = tf.nn.moments(inp, axes=[0, 2, 3])
+def batch_normalize(inp, beta, gamma, running_mean_var, training=False, epsilon=1e-8):
+    N, D, H, W = tf.shape(inp)
+    running_mean, running_variance = running_mean_var
 
-    N, D, h, w = tf.shape(inp)
-    beta, gamma = bg
+    M = N*H*W
+    x = tf.reshape(tf.transpose(inp, [0, 2, 3, 1]), [M, D])
 
     if training:
-        mean = np.mean(inp, axis=(0, 2, 3))
-        inp_minus_mean = inp - mean.reshape(1, D, 1, 1)
-        variance = np.mean(inp_minus_mean * inp_minus_mean, axis=(0, 2, 3))
-        inv_std = 1 / np.sqrt(variance.reshape(1, D, 1, 1) + epsilon)
-        x_hat = inp_minus_mean * inv_std
+        mean = (1. / M) * tf.reduce_sum(x, axis=0)
+        xmu = x - mean
+        variance = (1. / M) * tf.reduce_sum(xmu * xmu, axis=0) + epsilon
+        inv_std = 1. / tf.sqrt(variance)
+        x_hat = xmu * inv_std
+
+        running_mean, running_mean_var = tf.cond(tf.shape(running_mean) == 1,
+                lambda: (mean, variance),
+                lambda: (0.9 * running_mean + 0.1 * mean,
+                         0.9 * running_variance + 0.1 * variance))
     else:
-        mean, variance = mv
-        inp_minus_mean = inp - mean.reshape(1, D, 1, 1)
-        inv_std = 1 / np.sqrt(variance.reshape(1, D, 1, 1) + epsilon)
-        x_hat = inp_minus_mean * inv_std
+        xmu = x - running_mean
+        inv_std = tf.sqrt(running_variance)
+        x_hat = xmu * inv_std
 
-    norm_inp = gamma.reshape(1, D, 1, 1) * x_hat + beta.reshape(1, D, 1, 1)
-
-    cache = mean, inv_std, x_hat, gamma, epsilon
-    mean_var = np.stack((mean, variance))
-    return norm_inp, cache, mean_var
+    norm_inp = gamma * x_hat + beta
+    norm_inp = tf.transpose(tf.reshape(norm_inp, [N, H, W, D]), [0, 3, 1, 2])
+    cache = (xmu, inv_std, x_hat, gamma)
+    return norm_inp, cache, (running_mean, running_variance)
 
 
 def full_conn(inp, weights):
@@ -125,6 +129,7 @@ def mean_square_error(inp, label):
 def convolve_backprop(delta_out, inp, weights, pad=0, stride=1):
     N, D, h, w = tf.shape(inp)
     n_fm, n_c, h_w, w_w = tf.shape(weights)
+
     fm_h = tf.constant(((h + 2 * pad - h_w) / stride + 1), dtype=tf.int32)
     fm_w = tf.constant(((w + 2 * pad - w_w) / stride + 1), dtype=tf.int32)
     weights2d = tf.reshape(weights, [n_fm, -1])
@@ -157,23 +162,25 @@ def pool_backprop(delta_out, inp, p_h, p_w, stride, pad=0):
     dx = tf.reshape(back, tf.shape(inp))
     return dx
 
-def batch_norm_backprop(delta_out, cache):                                       #**************************************************************
-    N, D, _, _ = tf.shape(delta_out)
-    mean, inv_std, x_hat, gamma, epsilon = cache
+def batch_norm_backprop(delta_out, cache):
+    N, D, H, W = tf.shape(delta_out)
+    xmu, inv_std, x_hat, gamma = cache
 
-    # intermediate partial derivatives
-    dx_hat = delta_out * gamma.reshape(1, D, 1, 1)
+    M = N*H*W
+    dO = tf.reshape(tf.transpose(delta_out, [0, 2, 3, 1]), [M, D])
 
-    # final partial derivatives
-    dx_hat_sum = np.sum(dx_hat, axis=(0, 2, 3))
-    dx_hat2 = np.sum(dx_hat*x_hat, axis=(0, 2, 3))
-    dx = N*dx_hat - dx_hat_sum.reshape(1, D, 1, 1) - x_hat*dx_hat2.reshape(1, D, 1, 1)
-    dx = (1. / N) * inv_std * dx
-    db = np.sum(delta_out, axis=(0, 2, 3))
-    dg = np.sum(x_hat*delta_out, axis=(0, 2, 3))
+    db = tf.reduce_sum(dO, axis=0)
+    dg = tf.reduce_sum(x_hat * dO, axis=0)
 
-    dbg = np.stack((db, dg))
-    return dx, dbg
+    dx_hat = dO * gamma
+
+    dx1 = x_hat * tf.reduce_sum(dx_hat * x_hat, axis=0)
+    dx2 = M * dx_hat - tf.reduce_sum(dx_hat, axis=0)
+    dx = 1. / M * inv_std * (dx2 - dx1)
+
+    dx = tf.transpose(tf.reshape(dx, [N, H, W, D]), [0, 3, 1, 2])
+
+    return dx, db, dg
 
 def full_conn_backprop(delta_out, inp, weights):
     dx = tf.matmul(delta_out, tf.transpose(weights, perm=[1, 0]))
@@ -248,31 +255,18 @@ def col_to_img(col, inp_shape, f_h, f_w, o_h, o_w, pad, stride):
     z, y, x = get_col_indices(inp_shape,f_h, f_w, o_h, o_w, stride)
 
     h_p, w_p = i_h + 2 * pad, i_w + 2 * pad
-    img = np.zeros((N, i_c, h_p, w_p), dtype=float)
-    cols_reshaped = col.reshape(i_c*f_h*f_w, -1, N)
-    cols_reshaped = cols_reshaped.transpose(2, 0, 1)
-    np.add.at(img, (slice(None), z, y, x), cols_reshaped)
-    #print(img)
-    #print(cols_reshaped.shape)
+    img = tf.zeros((N, i_c, h_p, w_p), dtype=float)
+    cols_reshaped = tf.reshape(col, [i_c*f_h*f_w, -1, N])
+    cols_reshaped = tf.transpose(cols_reshaped, [2, 0, 1])
 
-    with tf.Session() as sess:
-        ref = np.zeros((N, i_c, h_p, w_p), dtype=float)
-        ref = tf.Variable(ref)
-        #print(ref.shape, "ref")
-        #print(indices.shape, "indices")
-        #print(updates.shape, "updates")
-        sess.run(tf.global_variables_initializer())
+    def add_at(i, z, x, y, c):
+        np.add.at(i, (slice(None), z, y, x), c)
+        img = np.copy(i)
+        return img.astype(np.float32)
 
-        def add_at(i, z, x, y, c):
-            np.add.at(i, (slice(None), z, y, x), c)
-            return i.astype(np.float32)
+    img = tf.py_func(add_at, [img, z, y, x, cols_reshaped], tf.float32)
 
-        i = np.zeros((N, i_c, h_p, w_p), dtype=float)
-        a = tf.py_func(add_at, [i, z, y, x, cols_reshaped], tf.float32)
-
-        A = sess.run(a).transpose(0, 1, 3, 2)
-
-    return img[:, :, pad:-pad, pad:-pad], A[:, :, pad:-pad, pad:-pad]
+    return img[:, :, pad:-pad, pad:-pad]
 
 
 def intersection_over_union(box1, box2, box1_cell, box2_cell, img_width, img_height):
