@@ -7,7 +7,7 @@ class Neural_Network:
 
     def __init__(self, model_type, infos, hypers, training=False):
         #model_type can specify which application we want to customize our operations for.
-
+        self.init_facial_rec_weights(infos)
         if model_type == "facial_recognition":
             #_, self.conv_thresh, self.IoU_thresh = hypers
             #self._init_facial_rec_weights(infos)
@@ -101,7 +101,7 @@ class Neural_Network:
     def create_emotion_rec(self, infos, inp):
         pass
 
-    def forward_prop(self, infos, inp, weights, training=False):
+    def forward_prop(self, infos, inp, training=False):
         n_fm, f_h, f_w, _, pad1 = infos[0]
         n_fm, f_h, f_w, _, pad2 = infos[1]
         n_fm, f_h, f_w, _, pad3 = infos[3]
@@ -128,64 +128,64 @@ class Neural_Network:
         '''   LAYER 1   '''
         conv1 = op.convolve(inp, self.w_conv1, pad=pad1)
         relu1 = op.sigmoid(conv1)
-        batch_norm1 = op.batch_normalize(relu1, self.w_bnb1, self.w_bng1, mv['bn1'], training=True)
+        batch_norm1 = op.batch_normalize(relu1, self.w_bnb1, self.w_bng1, self.running_mean_var_bn1, training=True)
 
         '''   LAYER 2   '''
         conv2 = op.convolve(batch_norm1[0], self.w_conv2, pad=pad2)
         relu2 = op.sigmoid(conv2)
-        batch_norm2 = op.batch_normalize(relu2, self.w_bnb2, self.w_bng2, mv['bn2'], training=True)
+        batch_norm2 = op.batch_normalize(relu2, self.w_bnb2, self.w_bng2, self.running_mean_var_bn2, training=True)
         pool2 = op.pool(batch_norm2[0], p_h1, p_w1, stride1)
 
         '''   LAYER 3   '''
         conv3 = op.convolve(pool2, self.w_conv3, pad=pad3)
         relu3 = op.sigmoid(conv3)
-        batch_norm3 = op.batch_normalize(relu3, self.w_bnb3, self.w_bng3, mv['bn3'], training=True)
+        batch_norm3 = op.batch_normalize(relu3, self.w_bnb3, self.w_bng3, self.running_mean_var_bn3, training=True)
 
         '''   LAYER 4   '''
-        conv4 = op.convolve(batch_norm3, w['conv4'], pad=pad4)
+        conv4 = op.convolve(batch_norm3[0], self.w_conv4, pad=pad4)
         relu4 = op.relu(conv4)
-        # batch_norm4 = op.batch_normalize(relu4, self.w_bnb4, self.w_bng4, mv['bn4'], training=True)
-        pool4 = op.pool(relu4, p_h2, p_w2, stride2)
+        batch_norm4 = op.batch_normalize(relu4, self.w_bnb4, self.w_bng4, self.running_mean_var_bn4, training=True)
+        pool4 = op.pool(batch_norm4[0], p_h2, p_w2, stride2)
 
         '''   LAYER 5   '''
         conv5 = op.convolve(pool4, self.w_conv5, pad=pad5)
         relu5 = op.relu(conv5)
-        # batch_norm5 = op.batch_normalize(relu5, self.w_bnb5, self.w_bng5, mv['bn5'], training=True)
-        pool5 = op.pool(relu5, p_h3, p_w3, stride3)
+        batch_norm5 = op.batch_normalize(relu5, self.w_bnb5, self.w_bng5, self.running_mean_var_bn5, training=True)
+        pool5 = op.pool(batch_norm5[0], p_h3, p_w3, stride3)
 
         '''   LAYER 6   '''
         conv6 = op.convolve(pool5, self.w_conv6, pad=pad6)
         relu6 = op.relu(conv6)
-        # batch_norm6 = op.batch_normalize(relu6, self.w_bnb6, self.w_bng6, mv['bn6'], training=True)
-        pool6 = op.pool(relu6, p_h4, p_w4, stride4)
+        batch_norm6 = op.batch_normalize(relu6, self.w_bnb6, self.w_bng6, self.running_mean_var_bn6, training=True)
+        pool6 = op.pool(batch_norm6[0], p_h4, p_w4, stride4)
 
         '''   LAYER 7   '''
         conv7 = op.convolve(pool6, self.w_conv7, pad=pad7)
         relu7 = op.relu(conv7)
-        # batch_norm7 = op.batch_normalize(relu7, self.w_bnb7, self.w_bng7, mv['bn7'], training=True)
-        pool7 = op.pool(relu7, p_h5, p_w5, stride5)
+        batch_norm7 = op.batch_normalize(relu7, self.w_bnb7, self.w_bng7, self.running_mean_var_bn7, training=True)
+        pool7 = op.pool(batch_norm7[0], p_h5, p_w5, stride5)
 
         """
         '''   LAYER 8   '''
         conv8 = op.convolve(pool7, self.w_conv8, pad=pad8)
         relu8 = op.relu(conv8)
-        # batch_norm8 = op.batch_normalize(relu8, self.w_bnb8, self.w_bng8, mv['bn8'], training=True)
+        batch_norm8 = op.batch_normalize(relu8, self.w_bnb8, self.w_bng8, self.running_mean_var_bn8, training=True)
 
         '''   LAYER 9   '''
-        conv9 = op.convolve(relu8, self.w_conv9, pad=pad9)
+        conv9 = op.convolve(batch_norm8[0], self.w_conv9, pad=pad9)
         relu9 = op.relu(conv9)
-        # batch_norm9 = op.batch_normalize(relu9, self.w_bnb9, self.w_bng9, mv['bn9'], training=True)
+        batch_norm9 = op.batch_normalize(relu9, self.w_bnb9, self.w_bng9, self.running_mean_var_bn9, training=True)
 
         '''   LAYER 10   '''
-        conv10 = op.convolve(relu9, self.w_conv10, pad=pad10)
+        conv10 = op.convolve(batch_norm9[0], self.w_conv10, pad=pad10)
         relu10 = op.relu(conv10)
         #prediction = op.non_max_suppression(relu10, self.conv_thresh, self.IoU_thresh)
         """
 
         '''   FULLY CONNECTED LAYER   '''
-        N, D, H, W = batch_norm3[0].shape
-        flatten = batch_norm3[0].reshape(-1, D * H * W)
-        full_conn = op.full_conn(flatten, w['full'])
+        N, D, H, W = tf.shape(pool7)[0], tf.shape(pool7)[1], tf.shape(pool7)[2], tf.shape(pool7)[3]
+        flatten = tf.reshape(pool7, [-1, D * H * W])
+        full_conn = op.full_conn(flatten, self.w_full)
         #prediction = op.sigmoid(full_conn)
         prediction = full_conn
 

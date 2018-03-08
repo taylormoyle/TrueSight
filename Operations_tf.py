@@ -14,24 +14,24 @@ GRID_WIDTH = 13
 ******************************************"""
 
 def pool(inp, p_h, p_w, stride, pad=0):
-    N, D, h, w = tf.shape(inp)
-    o_h = tf.constant(((h + 2 * pad - p_h) / stride + 1), dtype=tf.int32)
-    o_w = tf.constant(((w + 2 * pad - p_w) / stride + 1), dtype=tf.int32)
+    N, D, h, w = tf.shape(inp)[0], tf.shape(inp)[1], tf.shape(inp)[2], tf.shape(inp)[3]
+    o_h = tf.cast(((h + 2 * pad - p_h) / stride + 1), dtype=tf.int32)
+    o_w = tf.cast(((w + 2 * pad - p_w) / stride + 1), dtype=tf.int32)
 
     inp_reshaped = tf.reshape(inp, [N*D, 1, h, w])
     inp_col = img_to_col(inp_reshaped, p_h, p_w, o_h, o_w, pad, stride)
 
     max_indices = tf.argmax(inp_col, axis=0)
-    max_vals = tf.gather(inp_col, [max_indices, tf.range(tf.shape(inp_col)[1])])
+    max_vals = tf.gather(inp_col, [tf.cast(max_indices, dtype=tf.int32), tf.range(tf.shape(inp_col)[1])])
     max_reshape = tf.reshape(max_vals, [o_h, o_w, N, D])
     return tf.transpose(max_reshape, perm=[2, 3, 0, 1])
 
 
 def convolve(inp, weights, stride=1, pad=0):
-    bat, i_c, i_h, i_w = tf.shape(inp)
-    n_f, n_c, f_h, f_w = tf.shape(weights)
-    o_h = tf.constant(((i_h + 2 * pad - f_h) / stride + 1), dtype=tf.int32)
-    o_w = tf.constant(((i_w + 2 * pad - f_w) / stride + 1), dtype=tf.int32)
+    bat, i_c, i_h, i_w = tf.shape(inp)[0], tf.shape(inp)[1], tf.shape(inp)[2], tf.shape(inp)[3]
+    n_f, n_c, f_h, f_w = tf.shape(weights)[0], tf.shape(weights)[1], tf.shape(weights)[2], tf.shape(weights)[3]
+    o_h = tf.cast(((i_h + 2 * pad - f_h) / stride + 1), dtype=tf.int32)
+    o_w = tf.cast(((i_w + 2 * pad - f_w) / stride + 1), dtype=tf.int32)
 
     inp_col = img_to_col(inp, f_w, f_h, o_h, o_w, pad, stride)
     w_col = tf.reshape(weights, [n_f, -1])
@@ -42,32 +42,32 @@ def convolve(inp, weights, stride=1, pad=0):
 
 
 def batch_normalize(inp, beta, gamma, running_mean_var, training=False, epsilon=1e-8):
-    N, D, H, W = tf.shape(inp)
-    running_mean, running_variance = running_mean_var
+    N, D, H, W = tf.shape(inp)[0], tf.shape(inp)[1], tf.shape(inp)[2], tf.shape(inp)[3]
+    #running_mean, running_variance = running_mean_var[0], running_mean_var[1]
 
     M = N*H*W
     x = tf.reshape(tf.transpose(inp, [0, 2, 3, 1]), [M, D])
 
     if training:
-        mean = (1. / M) * tf.reduce_sum(x, axis=0)
+        mean = (1. / tf.cast(M, dtype=tf.float32)) * tf.reduce_sum(x, axis=0)
         xmu = x - mean
-        variance = (1. / M) * tf.reduce_sum(xmu * xmu, axis=0) + epsilon
+        variance = (1. / tf.cast(M, dtype=tf.float32)) * tf.reduce_sum(xmu * xmu, axis=0) + epsilon
         inv_std = 1. / tf.sqrt(variance)
         x_hat = xmu * inv_std
 
-        running_mean, running_mean_var = tf.cond(tf.shape(running_mean) == 1,
-                lambda: (mean, variance),
-                lambda: (0.9 * running_mean + 0.1 * mean,
-                         0.9 * running_variance + 0.1 * variance))
+        mean_var = tf.concat((mean, variance), axis=0)
+        running_mean_var = tf.cond(tf.equal(tf.shape(running_mean_var)[0], 1),
+                lambda: mean_var,
+                lambda: 0.9 * running_mean_var + 0.1 * mean_var)
     else:
-        xmu = x - running_mean
-        inv_std = tf.sqrt(running_variance)
+        xmu = x - running_mean_var[0]
+        inv_std = tf.sqrt(running_mean_var[1])
         x_hat = xmu * inv_std
 
     norm_inp = gamma * x_hat + beta
     norm_inp = tf.transpose(tf.reshape(norm_inp, [N, H, W, D]), [0, 3, 1, 2])
     cache = (xmu, inv_std, x_hat, gamma)
-    return norm_inp, cache, (running_mean, running_variance)
+    return norm_inp, cache, running_mean_var
 
 
 def full_conn(inp, weights):
@@ -79,7 +79,9 @@ def full_conn(inp, weights):
 ******************************************"""
 
 def relu(inp):
-    return tf.where(inp >= 0, inp, 0)
+    inp_reshaped = tf.reshape(inp, [-1])
+    out = tf.where(inp_reshaped >= [0], inp_reshaped, [0])
+    return tf.reshape(out, tf.shape(inp))
 
 
 def leaky_relu(inp, alpha=0.01):
@@ -127,8 +129,8 @@ def mean_square_error(inp, label):
 ******************************************"""
 
 def convolve_backprop(delta_out, inp, weights, pad=0, stride=1):
-    N, D, h, w = tf.shape(inp)
-    n_fm, n_c, h_w, w_w = tf.shape(weights)
+    N, D, h, w = tf.shape(inp)[0], tf.shape(inp)[1], tf.shape(inp)[2], tf.shape(inp)[3]
+    n_fm, n_c, h_w, w_w = tf.shape(weights)[0], tf.shape(weights)[1], tf.shape(weights)[2], tf.shape(weights)[3]
 
     fm_h = tf.constant(((h + 2 * pad - h_w) / stride + 1), dtype=tf.int32)
     fm_w = tf.constant(((w + 2 * pad - w_w) / stride + 1), dtype=tf.int32)
@@ -221,7 +223,7 @@ def mse_wh_prime(inp, label):
 ******************************************"""
 
 def get_col_indices(inp_shape, f_h, f_w, o_h, o_w, stride):
-    _, i_c, i_h, i_w = inp_shape
+    _, i_c, i_h, i_w = inp_shape[0], inp_shape[1], inp_shape[2], inp_shape[3]
 
     # z axis (channel)
     z = tf.reshape(tf.tile(tf.reshape(tf.range(i_c), [-1, 1]), [1, f_h * f_w]), [-1, 1])
@@ -236,16 +238,23 @@ def get_col_indices(inp_shape, f_h, f_w, o_h, o_w, stride):
     x1 = stride * tf.tile(tf.range(o_w), [o_h])
     x = tf.reshape(x0, [-1, 1]) + tf.reshape(x1, [1, -1])
 
-    return z, y, x
+    z_flat = tf.reshape(z, [-1])
+    y_flat = tf.reshape(y, [-1])
+    x_flat = tf.reshape(x, [-1])
+
+    zyx = tf.concat([z_flat,y_flat,x_flat], axis=0)
+    zyx = tf.reshape(zyx, [tf.shape(y)[0], tf.shape(y)[1], 3])
+
+    return zyx
 
 
 def img_to_col(inp, f_h, f_w, o_h, o_w, pad, stride):
-    z, y, x = get_col_indices(tf.shape(inp), f_h, f_w, o_h, o_w, stride)
+    zyx = get_col_indices(tf.shape(inp), f_h, f_w, o_h, o_w, stride)
 
     inp_padded = tf.pad(inp, [[0, 0], [0, 0], [pad, pad], [pad, pad]], mode='CONSTANT')
 
     indices = tf.range(tf.shape(inp)[0])
-    col = tf.gather(inp_padded, [indices, z, y, x])
+    col = tf.gather_nd(inp_padded, zyx)
     col = tf.transpose(col, perm=[1, 2, 0])
     return tf.reshape(col, [(f_h * f_w * tf.shape(inp)[1]), -1])
 
@@ -354,7 +363,7 @@ def initialize_weights(shape, name):
        # w_out = shape[1]
     #std = 2 / (w_in + w_out)
     weights = tf.truncated_normal(shape, stddev=0.01, name=name)
-    return weights
+    return tf.Variable(weights)
 
 
 def update_weights(weights, gradients, learning_rate, batch_size):

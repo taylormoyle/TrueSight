@@ -76,7 +76,7 @@ def load_img(filename_queue):
     reader = tf.WholeFileReader()
     key, value = reader.read(filename_queue)
 
-    image = tf.image.decode_jpeg(value)
+    image = tf.image.decode_jpeg(value, channels=3)
     image = resize_img(image)
     image = tf.transpose(image, [2, 0, 1])
     return image, key
@@ -96,22 +96,26 @@ def load_data(filenames, batch_size, num_epochs):
 
 # Resize image to a 416 x 416 resolution
 def resize_img(img):
-    h, w,  = img.get_shape()
+    h = tf.shape(img)[0]
+    w = tf.shape(img)[1]
     new_h = 0
     new_w = 0
 
     def newH():
         new_h = RES
-        new_w = int((w / h) * new_h)
+        new_w = tf.cast((w / h) * new_h, dtype=tf.int32)
         return new_h, new_w
 
     def newW():
         new_w = RES
-        new_h = int((w / h) / new_w)
+        new_h = tf.cast((w / h) / new_w, dtype=tf.int32)
         return new_h, new_w
 
-    new_h, new_w = tf.case({tf.greater(h, w): newH, tf.greater(w, h): newW},
-                           default=(lambda: RES, RES), exclusive=True)
+    def default_func():
+        return RES, RES
+
+    new_h, new_w = tf.case({tf.greater(tf.shape(img)[0], tf.shape(img)[1]): newH, tf.greater(tf.shape(img)[1], tf.shape(img)[0]): newW},
+                           default=default_func, exclusive=True)
 
     img_resized = tf.image.resize_images(img, [new_h, new_w])
     img_resized = tf.image.resize_image_with_crop_or_pad(img_resized, RES, RES)
@@ -258,17 +262,20 @@ print(t.time() - s)
 '''    TENSORFLOW TRAINGING SCRIPT   '''
 
 epochs = 1000
-batch_size = 5
+batch_size = 1
 learning_rate = 1e-4
 
 dataset, labels = prep_data(img_dir, xml_dir)
 train_data, train_labels = filter_data(dataset['training'], labels, classes)
 val_data, val_labels = filter_data(dataset['validation'], labels, classes)
 
-train_img_batch, train_label_batch = load_data(dataset, batch_size, epochs)
+train_img_batch, train_label_batch = load_data(dataset['training'], batch_size, epochs)
+val_img_batch, val_label_batch = load_data(dataset['validation'], batch_size, epochs)
 
 net = nn.Neural_Network("facial_recognition", infos, hypers, training=True)
-net.init_facial_rec_weights(infos)
+#net.init_facial_rec_weights(infos)
+
+init_op = tf.global_variables_initializer()
 
 inp_placeholder = tf.placeholder(tf.float32, shape=[None, 3, RES, RES])
 pred_placeholder = net.forward_prop(infos, inp_placeholder, training=True)
@@ -281,14 +288,15 @@ correct_prediction = tf.equal(tf.argmax(pred_placeholder,1), tf.argmax(ground_tr
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
 with tf.Session() as sess:
-    sess.run(tf.global_variables_initializer())
+    sess.run(tf.local_variables_initializer())
+    sess.run(init_op)
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(coord=coord)
 
     for e in range(epochs):
         batch, lbls = sess.run((train_img_batch, train_label_batch))
         if e % 100 == 0:
-            val_batch, val_lbls = sess.run((val_data, val_labels))
+            val_batch, val_lbls = sess.run((val_img_batch, val_label_batch))
             train_accuracy = accuracy.eval(
                 feed_dict={inp_placeholder: val_batch, ground_truth_placeholder: val_lbls
                            })
