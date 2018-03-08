@@ -72,8 +72,7 @@ def prep_data(img_dir, xml_dir, test_percent=10, validation_percent=10):
 
 
 # Loads each file as np RGB array, and returns an array of tuples [(image, label)]
-def load_data(filenames, epochs):
-    filename_queue = tf.train.string_input_producer(filenames)
+def load_img(filename_queue):
     reader = tf.WholeFileReader()
     key, value = reader.read(filename_queue)
 
@@ -82,21 +81,37 @@ def load_data(filenames, epochs):
     image = tf.transpose(image, [2, 0, 1])
     return image, key
 
+def load_data(filenames, batch_size, num_epochs):
+    filename_queue = tf.train.string_input_producer(
+        filenames, num_epochs=num_epochs, shuffle=True)
+    image, label = load_img(filename_queue)
+    min_after_dequeue = 10000
+    capacity = min_after_dequeue + 3 * batch_size
+    image_batch, label_batch = tf.train.shuffle_batch(
+        [image, label], batch_size=batch_size, capacity=capacity,
+        min_after_dequeue=min_after_dequeue
+    )
+    return image_batch, label_batch
+
 
 # Resize image to a 416 x 416 resolution
 def resize_img(img):
-    h, w, _ = img.get_shape()
+    h, w,  = img.get_shape()
     new_h = 0
     new_w = 0
-    if h > w:
+
+    def newH():
         new_h = RES
         new_w = int((w / h) * new_h)
-    elif w > h:
+        return new_h, new_w
+
+    def newW():
         new_w = RES
         new_h = int((w / h) / new_w)
-    else:
-        new_h = RES
-        new_w = RES
+        return new_h, new_w
+
+    new_h, new_w = tf.case({tf.greater(h, w): newH, tf.greater(w, h): newW},
+                           default=(lambda: RES, RES), exclusive=True)
 
     img_resized = tf.image.resize_images(img, [new_h, new_w])
     img_resized = tf.image.resize_image_with_crop_or_pad(img_resized, RES, RES)
@@ -108,11 +123,11 @@ def resize_img(img):
 def process_data(images):
 
     # Perform Transformations on all images to diversify dataset
-    images = tf.transpose(images, (0, 2, 3, 1))
+    images = tf.transpose(images, [0, 2, 3, 1])
     image_huerized = tf.image.random_hue(images, DELTA_HUE)
     image_saturized = tf.image.random_saturation(image_huerized, MAX_DELTA_SATURATION, MIN_DELTA_SATURATION)
     image_flipperized = tf.image.random_flip_left_right(image_saturized)
-    images = tf.transpose(image_flipperized, (0, 3, 1, 2))
+    images = tf.transpose(image_flipperized, [0, 3, 1, 2])
 
     # Normalize images to reduce noise
     mean, variance = tf.nn.moments(images, axes=[0, 2, 3])
@@ -120,10 +135,10 @@ def process_data(images):
     return images
 
 
-def filter_data(labels, classes):
+def filter_data(filenames, labels, classes):
     ret_imgs = []
     ret_lbls = {}
-    for img in labels:
+    for img in filenames:
         if len(labels[img]) == 1:
             label = np.zeros(len(classes))
             name = labels[img][0]['name']
@@ -177,9 +192,6 @@ def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
 
 ''''     TRAINING SCRIPT     '''
 
-s = t.time()
-epoch = 30
-batch_size = 5
 
 infos = [[16, 3, 3, 1, 1],      # output shape (416, 416, 16)
          [16, 3, 3, 1, 1],      # output shape (416, 416, 16)
@@ -205,6 +217,7 @@ classes = ['person', 'dog', 'aeroplane', 'bus', 'bird', 'boat', 'car', 'bottle',
            'cat', 'horse', 'diningtable', 'cow', 'train', 'motorbike', 'bicycle',
            'sheep', 'tvmonitor', 'chair', 'sofa', 'pottedplant']
 
+"""
 net = nn.Neural_Network("facial_recognition", infos, hypers, training=True)
 weights = net.init_facial_rec_weights(infos)
 learning_rate = 0.001
@@ -241,34 +254,46 @@ for e in range(epoch):
 
 print(t.time() - s)
 
-'''    TENSORFLOW TRAINGING SCRIPT   '''
 """
-dataset, labels = prep_data(img_dir, xml_dir)
-dataset, labels = filter_data(labels, classes)
+'''    TENSORFLOW TRAINGING SCRIPT   '''
 
-imgs, filenames = load_data(dataset, 10)
+epochs = 1000
+batch_size = 5
+learning_rate = 1e-4
+
+dataset, labels = prep_data(img_dir, xml_dir)
+train_data, train_labels = filter_data(dataset['training'], labels, classes)
+val_data, val_labels = filter_data(dataset['validation'], labels, classes)
+
+train_img_batch, train_label_batch = load_data(dataset, batch_size, epochs)
+
+net = nn.Neural_Network("facial_recognition", infos, hypers, training=True)
+net.init_facial_rec_weights(infos)
+
+inp_placeholder = tf.placeholder(tf.float32, shape=[None, 3, RES, RES])
+pred_placeholder = net.forward_prop(infos, inp_placeholder, training=True)
+ground_truth_placeholder = tf.placeholder(tf.float32)
+
+cross_entropy = tf.reduce_mean(
+    tf.nn.softmax_cross_entropy_with_logits(labels=ground_truth_placeholder, logits=pred_placeholder))
+train_step = tf.train.AdamOptimizer(learning_rate).minimize(cross_entropy)
+correct_prediction = tf.equal(tf.argmax(pred_placeholder,1), tf.argmax(ground_truth_placeholder,1))
+accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
 with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
-
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(coord=coord)
 
-    s = t.time()
-    images = np.empty((3, 416, 416))
-    fnames = []
-    for _ in labels:
-        img, fn = sess.run((imgs, filenames))
-        images = np.append(images, img)
-        fnames.append(fn)
-
-        #print(img.shape)
-        #print(fn)
-
-    print(images.shape)
-    print(len(fnames))
-    print("runtime: ", t.time() - s)
+    for e in range(epochs):
+        batch, lbls = sess.run((train_img_batch, train_label_batch))
+        if e % 100 == 0:
+            val_batch, val_lbls = sess.run((val_data, val_labels))
+            train_accuracy = accuracy.eval(
+                feed_dict={inp_placeholder: val_batch, ground_truth_placeholder: val_lbls
+                           })
+            print("training accuracy: %g" % train_accuracy)
+        train_step.run(feed_dict={inp_placeholder: batch, ground_truth_placeholder: lbls})
 
     coord.request_stop()
     coord.join(threads)
-"""
