@@ -1,6 +1,6 @@
 import tensorflow as tf
 import numpy as np
-from math import sqrt
+from math import floor
 
 IMG_HEIGHT = 416
 IMG_WIDTH = 416
@@ -329,6 +329,28 @@ def _find_corners(box, cell):
     BR = [bB, bR]
 
     return TL, TR, BL, BR
+
+def find_midpoint(box):
+    img_xm = box[0] + (box[2] / 2)
+    img_ym = box[1] + (box[3] / 2)
+    c_x = (img_xm % CELL_WIDTH) / CELL_WIDTH
+    c_y = (img_ym % CELL_HEIGHT) / CELL_HEIGHT
+    cell_x = floor(box[0] / CELL_WIDTH)
+    cell_y = floor(box[1] / CELL_HEIGHT)
+    cell_num = cell_y * GRID_WIDTH + cell_x
+    bb_width = box[2] / IMG_WIDTH
+    bb_height = box[3] / IMG_HEIGHT
+    return cell_num, c_x, c_y, bb_width, bb_height
+
+
+def rescale_labels(x, y, box_w, box_h, img_w, img_h):
+    s_w = floor(IMG_WIDTH / img_w)
+    s_h = floor(IMG_HEIGHT / img_h)
+    Nx = s_w * x
+    Ny = s_h * y
+    Nw = s_w * box_w
+    Nh = s_h * box_h
+    return Nx, Ny, Nw, Nh
 
 
 def non_max_suppression(bounding_boxes, conf_threshold, IoU_threshold):

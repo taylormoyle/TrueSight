@@ -1,6 +1,6 @@
 import tensorflow as tf
 import numpy as np
-import Operations as op
+import Operations_tf as op
 import Neural_Network as nn
 from PIL import Image
 import glob
@@ -21,11 +21,11 @@ def prep_data(img_dir, xml_dir, test_percent=10, validation_percent=10):
     labels = {}
     img_path = os.path.join(img_dir, "*")
     img_files = glob.glob(img_path)
-    sorted(img_files)
+    img_files.sort()
 
     xml_path = os.path.join(xml_dir, "*")
     xml_files = glob.glob(xml_path)
-    sorted(xml_files)
+    xml_files.sort()
 
     for f, x in zip(img_files, xml_files):
         _, name = os.path.split(f)
@@ -56,7 +56,6 @@ def prep_data(img_dir, xml_dir, test_percent=10, validation_percent=10):
                 for l, m in zip(label, midpoints):
                     img_labels.append({'name': l, 'midpoint': m})
 
-        #data = {'filename': f, 'labels': labels}
         dataset.append(f)
         labels[f] = img_labels
 
@@ -71,6 +70,60 @@ def prep_data(img_dir, xml_dir, test_percent=10, validation_percent=10):
     return dataset, labels
 
 
+def prep_face_data(train_fn, validation_fn):
+    dataset = {'training': [], 'test': [], 'validation': []}
+    train_labels = {}
+    valtest_labels = {}
+
+    with open(train_fn) as f:
+        name = ""
+        count = 0
+        line = f.readline()
+        while not line == "":
+            if ".jpg" in line:
+                name = line.split('/')
+                filename = os.path.join(name[0], name[1])
+                dataset['training'].append(filename)
+                count = f.readline()
+            label = []
+            for b in range(int(count)):
+                box = f.readline().split()
+                x = box[0]
+                y = box[1]
+                w = box[2]
+                h = box[3]
+                label.append([1, x, y, w, h])
+            train_labels[filename] = label
+            line = f.readline()
+
+    with open(validation_fn) as f:
+        name = ""
+        count = 0
+        line = f.readline()
+        while not line == "":
+            if ".jpg" in line:
+                name = line.split('/')
+                filename = os.path.join(name[0], name[1])
+                dataset['validation'].append(filename)
+                count = f.readline()
+            label = []
+            for b in range(int(count)):
+                box = f.readline().split()
+                x = box[0]
+                y = box[1]
+                w = box[2]
+                h = box[3]
+                label.append([1, x, y, w, h])
+            valtest_labels[filename] = label
+            line = f.readline()
+
+    rand.shuffle(dataset['validation'])
+    dataset['test'] = dataset['validation'][:int(len(dataset['validation']) / 2)]
+    dataset['validation'] = dataset['validation'][int(len(dataset['validation']) / 2):]
+
+    return dataset
+
+
 # Loads each file as np RGB array, and returns an array of tuples [(image, label)]
 def load_img(filename_queue):
     reader = tf.WholeFileReader()
@@ -80,6 +133,7 @@ def load_img(filename_queue):
     image = resize_img(image)
     image = tf.transpose(image, [2, 0, 1])
     return image, key
+
 
 def load_data(filenames, batch_size, num_epochs):
     filename_queue = tf.train.string_input_producer(
@@ -96,32 +150,31 @@ def load_data(filenames, batch_size, num_epochs):
 
 # Resize image to a 416 x 416 resolution
 def resize_img(img):
-    h = tf.shape(img)[0]
-    w = tf.shape(img)[1]
-    new_h = 0
-    new_w = 0
-
-    def newH():
-        new_h = RES
-        new_w = tf.cast((w / h) * new_h, dtype=tf.int32)
-        return new_h, new_w
-
-    def newW():
-        new_w = RES
-        new_h = tf.cast((w / h) / new_w, dtype=tf.int32)
-        return new_h, new_w
-
-    def default_func():
-        return RES, RES
-
-    new_h, new_w = tf.case({tf.greater(tf.shape(img)[0], tf.shape(img)[1]): newH, tf.greater(tf.shape(img)[1], tf.shape(img)[0]): newW},
-                           default=default_func, exclusive=True)
-
-    img_resized = tf.image.resize_images(img, [new_h, new_w])
-    img_resized = tf.image.resize_image_with_crop_or_pad(img_resized, RES, RES)
-
-    return img_resized
-
+    img.thumbnail([RES, RES], Image.ANTIALIAS)
+    img = np.array(img)
+    height, width, _ = img.shape
+    pad_top = 0
+    pad_bottom = 0
+    pad_left = 0
+    pad_right = 0
+    if height < RES:
+        diff = RES - height
+        pad = int(diff / 2)
+        pad_top = pad
+        if diff % 2 == 0:
+            pad_bottom = pad
+        else:
+            pad_bottom = pad + 1
+    if width < RES:
+        diff = RES - width
+        pad = int(diff / 2)
+        pad_left = pad
+        if diff % 2 == 0:
+            pad_right = pad
+        else:
+            pad_right = pad + 1
+    img = np.pad(img, ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)), mode='constant')
+    return img
 
 # Perform transformations, normalize images, return array of tuples [(norm_image, label)]
 def process_data(images):
