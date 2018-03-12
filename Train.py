@@ -8,6 +8,7 @@ import os
 import xml.etree.ElementTree as ET
 import random as rand
 import time as t
+import random
 
 RES = 416
 DELTA_HUE = 0.3
@@ -21,11 +22,11 @@ def prep_data(img_dir, xml_dir, test_percent=10, validation_percent=10):
     labels = {}
     img_path = os.path.join(img_dir, "*")
     img_files = glob.glob(img_path)
-    img_files.sort()
+    sorted(img_files)
 
     xml_path = os.path.join(xml_dir, "*")
     xml_files = glob.glob(xml_path)
-    xml_files.sort()
+    sorted(xml_files)
 
     for f, x in zip(img_files, xml_files):
         _, name = os.path.split(f)
@@ -56,6 +57,7 @@ def prep_data(img_dir, xml_dir, test_percent=10, validation_percent=10):
                 for l, m in zip(label, midpoints):
                     img_labels.append({'name': l, 'midpoint': m})
 
+        #data = {'filename': f, 'labels': labels}
         dataset.append(f)
         labels[f] = img_labels
 
@@ -70,58 +72,57 @@ def prep_data(img_dir, xml_dir, test_percent=10, validation_percent=10):
     return dataset, labels
 
 
-def prep_face_data(train_fn, validation_fn):
+def prep_face_data(train_fn, validation_fn, data_directory):
     dataset = {'training': [], 'test': [], 'validation': []}
     train_labels = {}
     valtest_labels = {}
 
     with open(train_fn) as f:
-        name = ""
+        filename = ""
         count = 0
         line = f.readline()
         while not line == "":
             if ".jpg" in line:
                 name = line.split('/')
-                filename = os.path.join(name[0], name[1])
-                dataset['training'].append(filename)
+                filename = os.path.join(data_directory, 'WIDER_train', 'images', name[0], name[1])
+                dataset['training'].append(filename[:-1])
                 count = f.readline()
             label = []
             for b in range(int(count)):
                 box = f.readline().split()
-                x = box[0]
-                y = box[1]
-                w = box[2]
-                h = box[3]
+                x = int(box[0])
+                y = int(box[1])
+                w = int(box[2])
+                h = int(box[3])
                 label.append([1, x, y, w, h])
-            train_labels[filename] = label
+            train_labels[filename[:-1]] = label
             line = f.readline()
 
     with open(validation_fn) as f:
-        name = ""
+        filename = ""
         count = 0
         line = f.readline()
         while not line == "":
             if ".jpg" in line:
                 name = line.split('/')
-                filename = os.path.join(name[0], name[1])
-                dataset['validation'].append(filename)
+                filename = os.path.join(data_directory, 'WIDER_val', 'images', name[0], name[1])
+                dataset['validation'].append(filename[:-1])
                 count = f.readline()
             label = []
             for b in range(int(count)):
                 box = f.readline().split()
-                x = box[0]
-                y = box[1]
-                w = box[2]
-                h = box[3]
+                x = int(box[0])
+                y = int(box[1])
+                w = int(box[2])
+                h = int(box[3])
                 label.append([1, x, y, w, h])
-            valtest_labels[filename] = label
+            valtest_labels[filename[:-1]] = label
             line = f.readline()
 
-    rand.shuffle(dataset['validation'])
+    random.shuffle(dataset['validation'])
     dataset['test'] = dataset['validation'][:int(len(dataset['validation']) / 2)]
     dataset['validation'] = dataset['validation'][int(len(dataset['validation']) / 2):]
-
-    return dataset
+    return dataset, train_labels, valtest_labels
 
 
 # Loads each file as np RGB array, and returns an array of tuples [(image, label)]
