@@ -10,10 +10,10 @@ import random as rand
 import time as t
 import random
 
-RES = 416
-DELTA_HUE = 0.3
-MAX_DELTA_SATURATION = 0.3
-MIN_DELTA_SATURATION = 0.3
+RES = 208
+DELTA_HUE = 0.032
+MAX_DELTA_SATURATION = 1.5
+MIN_DELTA_SATURATION = 0.5
 
 
 # Gather files, attach labels to their associated filenames, and return an array of tuples [(filename, label)]
@@ -132,7 +132,8 @@ def load_img(filename_queue):
 
     image = tf.image.decode_jpeg(value, channels=3)
     image = resize_img(image)
-    image = tf.transpose(image, [2, 0, 1])
+    image = process_data(image)
+    image = tf.transpose(image, perm=[2, 0, 1])
     return image, key
 
 
@@ -140,7 +141,7 @@ def load_data(filenames, batch_size, num_epochs):
     filename_queue = tf.train.string_input_producer(
         filenames, num_epochs=num_epochs, shuffle=True)
     image, label = load_img(filename_queue)
-    min_after_dequeue = 10000
+    min_after_dequeue = 1000
     capacity = min_after_dequeue + 3 * batch_size
     image_batch, label_batch = tf.train.shuffle_batch(
         [image, label], batch_size=batch_size, capacity=capacity,
@@ -151,46 +152,31 @@ def load_data(filenames, batch_size, num_epochs):
 
 # Resize image to a 416 x 416 resolution
 def resize_img(img):
-    img.thumbnail([RES, RES], Image.ANTIALIAS)
-    img = np.array(img)
-    height, width, _ = img.shape
-    pad_top = 0
-    pad_bottom = 0
-    pad_left = 0
-    pad_right = 0
-    if height < RES:
-        diff = RES - height
-        pad = int(diff / 2)
-        pad_top = pad
-        if diff % 2 == 0:
-            pad_bottom = pad
-        else:
-            pad_bottom = pad + 1
-    if width < RES:
-        diff = RES - width
-        pad = int(diff / 2)
-        pad_left = pad
-        if diff % 2 == 0:
-            pad_right = pad
-        else:
-            pad_right = pad + 1
-    img = np.pad(img, ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0)), mode='constant')
-    return img
+    h, w, _ = img.get_shape()
+    new_h = 0
+    new_w = 0
+    if h > w:
+        new_h = RES
+        new_w = int((w / h) * new_h)
+    elif w > h:
+        new_w = RES
+        new_h = int((w / h) / new_w)
+    else:
+        new_h = RES
+        new_w = RES
+
+    img_resized = tf.image.resize_images(img, [new_h, new_w])
+    img_resized = tf.image.resize_image_with_crop_or_pad(img_resized, RES, RES)
+
+    return img_resized
 
 # Perform transformations, normalize images, return array of tuples [(norm_image, label)]
 def process_data(images):
-
     # Perform Transformations on all images to diversify dataset
-    images = tf.transpose(images, [0, 2, 3, 1])
     image_huerized = tf.image.random_hue(images, DELTA_HUE)
-    image_saturized = tf.image.random_saturation(image_huerized, MAX_DELTA_SATURATION, MIN_DELTA_SATURATION)
+    image_saturized = tf.image.random_saturation(image_huerized, MIN_DELTA_SATURATION, MAX_DELTA_SATURATION)
     image_flipperized = tf.image.random_flip_left_right(image_saturized)
-    images = tf.transpose(image_flipperized, [0, 3, 1, 2])
-
-    # Normalize images to reduce noise
-    mean, variance = tf.nn.moments(images, axes=[0, 2, 3])
-    images = (image_flipperized - mean) / tf.sqrt(variance)
-    return images
+    return image_flipperized
 
 
 def filter_data(filenames, labels, classes):
@@ -259,7 +245,7 @@ infos = [[16, 3, 3, 1, 1],      # output shape (416, 416, 16)
          [0, 2, 2, 2, 0],       # output shape (104, 104, 32)
          [64, 3, 3, 1, 1],      # output shape (104, 104, 64)
          [0, 2, 2, 2, 0],       # output shape ( 52,  52, 64)
-         [128, 3, 3, 1, 1],     # output shape ( 52,  52, 128)
+         [64, 3, 3, 1, 1],     # output shape ( 52,  52, 128)
          [0, 2, 2, 2, 0],       # output shape ( 26,  26, 128)
          [256, 3, 3, 1, 1],     # output shape ( 26,  26, 256)
          [0, 2, 2, 2, 0],       # output shape ( 13,  13, 256)
@@ -271,6 +257,7 @@ infos = [[16, 3, 3, 1, 1],      # output shape (416, 416, 16)
 hypers = [7]
 img_dir = "data\\VOC2012\\JPEGImages"
 xml_dir = "data\\VOC2012\\Annotations"
+save_dir = "models\\"
 classes = ['person', 'dog', 'aeroplane', 'bus', 'bird', 'boat', 'car', 'bottle',
            'cat', 'horse', 'diningtable', 'cow', 'train', 'motorbike', 'bicycle',
            'sheep', 'tvmonitor', 'chair', 'sofa', 'pottedplant']
@@ -315,47 +302,87 @@ print(t.time() - s)
 """
 '''    TENSORFLOW TRAINGING SCRIPT   '''
 
-epochs = 1000
-batch_size = 1
-learning_rate = 1e-4
+epochs = 10
+batch_size = 96
+learning_rate = 1e-5
 
 dataset, labels = prep_data(img_dir, xml_dir)
 train_data, train_labels = filter_data(dataset['training'], labels, classes)
 val_data, val_labels = filter_data(dataset['validation'], labels, classes)
+test_data, test_labels = filter_data(dataset['test'], labels, classes)
 
-train_img_batch, train_label_batch = load_data(dataset['training'], batch_size, epochs)
-val_img_batch, val_label_batch = load_data(dataset['validation'], batch_size, epochs)
+train_img_batch, train_label_batch = load_data(train_data, batch_size, epochs)
+val_img_batch, val_label_batch = load_data(val_data, batch_size, None)
+test_img_batch, test_label_batch = load_data(test_data, batch_size, None)
 
-net = nn.Neural_Network("facial_recognition", infos, hypers, training=True)
-#net.init_facial_rec_weights(infos)
-
-init_op = tf.global_variables_initializer()
+net = nn.Neural_Network("facial_recognition", infos, hypers)
 
 inp_placeholder = tf.placeholder(tf.float32, shape=[None, 3, RES, RES])
-pred_placeholder = net.forward_prop(infos, inp_placeholder, training=True)
-ground_truth_placeholder = tf.placeholder(tf.float32)
+training_placeholder = tf.placeholder(tf.bool)
+pred_placeholder = net.forward_prop(infos, inp_placeholder, training=training_placeholder)
 
+ground_truth_placeholder = tf.placeholder(tf.float32)
 cross_entropy = tf.reduce_mean(
-    tf.nn.softmax_cross_entropy_with_logits(labels=ground_truth_placeholder, logits=pred_placeholder))
+    tf.nn.softmax_cross_entropy_with_logits_v2(labels=ground_truth_placeholder, logits=pred_placeholder))
+
 train_step = tf.train.AdamOptimizer(learning_rate).minimize(cross_entropy)
-correct_prediction = tf.equal(tf.argmax(pred_placeholder,1), tf.argmax(ground_truth_placeholder,1))
+correct_prediction = tf.equal(tf.argmax(pred_placeholder, 1), tf.argmax(ground_truth_placeholder, 1))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
+saver = tf.train.Saver()
+
+s = t.time()
 with tf.Session() as sess:
     sess.run(tf.local_variables_initializer())
-    sess.run(init_op)
+    sess.run(tf.global_variables_initializer())
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(coord=coord)
 
+    num_train_batches = int(len(train_data) / batch_size)
+    print(num_train_batches)
     for e in range(epochs):
-        batch, lbls = sess.run((train_img_batch, train_label_batch))
-        if e % 100 == 0:
-            val_batch, val_lbls = sess.run((val_img_batch, val_label_batch))
-            train_accuracy = accuracy.eval(
-                feed_dict={inp_placeholder: val_batch, ground_truth_placeholder: val_lbls
-                           })
-            print("training accuracy: %g" % train_accuracy)
-        train_step.run(feed_dict={inp_placeholder: batch, ground_truth_placeholder: lbls})
+        print("epoch: ", e)
+        print('getting validation accuracy...')
+        num_val_batches = int(len(val_data) / batch_size)
+        train_accuracy = 0.
+        for vb in range(num_val_batches):
+            val_batch, val_lbl_keys = sess.run((val_img_batch, val_label_batch))
+            val_lbls = [val_labels[l.decode()] for l in val_lbl_keys]
+            train_accuracy += accuracy.eval(
+                feed_dict={inp_placeholder: val_batch,
+                           training_placeholder: False,
+                           ground_truth_placeholder: val_lbls}) / float(num_val_batches)
+            print("\r%d/%d. current training accuracy: %g" % (vb, num_val_batches, train_accuracy), end='')
+        print("\ntraining accuracy: %g" % train_accuracy)
+        for b in range(num_train_batches):
+            train_batch, train_lbl_keys = sess.run((train_img_batch, train_label_batch))
+            train_lbls = [train_labels[l.decode()] for l in train_lbl_keys]
+            train_step.run(feed_dict={inp_placeholder: train_batch,
+                                      training_placeholder: True,
+                                      ground_truth_placeholder: train_lbls})
+
+        if e % 25 == 0 and e != 0:
+            # save checkpoint
+            save_path = os.path.join(save_dir, "conv6_208_%g.ckpt" % train_accuracy)
+            saver.save(sess, save_path)
+
+    num_test_batches = int(len(test_data) / batch_size)
+    test_accuracy = 0
+    for _ in range(num_test_batches):
+        test_batch, test_lbl_keys = sess.run((test_img_batch, test_label_batch))
+        test_lbls = [test_labels[l.decode()] for l in test_lbl_keys]
+        test_accuracy += accuracy.eval(
+            feed_dict={inp_placeholder: test_batch,
+                       training_placeholder: False,
+                       ground_truth_placeholder: test_lbls})
+    test_accuracy /= num_test_batches
+    print("test accuracy: %g" % test_accuracy)
+
+    # save end
+    save_path = os.path.join(save_dir, "conv6_208_%g.ckpt" % test_accuracy)
+    saver.save(sess, save_path)
 
     coord.request_stop()
     coord.join(threads)
+
+print("runtime: ", (t.time()-s))

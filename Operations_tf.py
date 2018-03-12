@@ -1,6 +1,7 @@
 import tensorflow as tf
 import numpy as np
 from math import floor
+from Operations import img_to_col as im2col
 
 IMG_HEIGHT = 416
 IMG_WIDTH = 416
@@ -14,17 +15,24 @@ GRID_WIDTH = 13
 ******************************************"""
 
 def pool(inp, p_h, p_w, stride, pad=0):
-    N, D, h, w = tf.shape(inp)[0], tf.shape(inp)[1], tf.shape(inp)[2], tf.shape(inp)[3]
-    o_h = tf.cast(((h + 2 * pad - p_h) / stride + 1), dtype=tf.int32)
-    o_w = tf.cast(((w + 2 * pad - p_w) / stride + 1), dtype=tf.int32)
+    N, D, H, W = tf.shape(inp)[0], tf.shape(inp)[1], tf.shape(inp)[2], tf.shape(inp)[3]
+    #o_h = tf.cast(((h + 2 * pad - p_h) / stride + 1), dtype=tf.int32)
+    #o_w = tf.cast(((w + 2 * pad - p_w) / stride + 1), dtype=tf.int32)
 
-    inp_reshaped = tf.reshape(inp, [N*D, 1, h, w])
-    inp_col = img_to_col(inp_reshaped, p_h, p_w, o_h, o_w, pad, stride)
+    #inp_reshaped = tf.transpose(tf.reshape(inp, [N*D, 1, h, w]), perm=[0, 2, 3, 1])
+    #inp_col = img_to_col(inp_reshaped, p_h, p_w, o_h, o_w, pad, stride)
+    #inp_col = tf.extract_image_patches(inp_reshaped, ksizes=[1, 2, 2, 1], strides=[1, 2, 2, 1], rates=[1, 1, 1, 1], padding="VALID")
+    #inp_col = tf.transpose(tf.reshape(inp_col, [-1, p_h*p_w]), perm=[1, 0])
 
-    max_indices = tf.argmax(inp_col, axis=0)
-    max_vals = tf.gather(inp_col, [tf.cast(max_indices, dtype=tf.int32), tf.range(tf.shape(inp_col)[1])])
-    max_reshape = tf.reshape(max_vals, [o_h, o_w, N, D])
-    return tf.transpose(max_reshape, perm=[2, 3, 0, 1])
+    #max_indices = tf.argmax(inp_col, axis=0)
+    #max_vals = tf.gather(inp_col, [tf.cast(max_indices, dtype=tf.int32), tf.range(tf.shape(inp_col)[1])])
+    #max_reshape = tf.reshape(max_vals, [o_h, o_w, N, D])
+    #tf.transpose(max_reshape, perm=[2, 3, 0, 1])
+
+    inp_reshaped = tf.reshape(inp, [N, D, tf.cast(H/p_h, dtype=tf.int32), p_h,
+                           tf.cast(W/p_w, dtype=tf.int32), p_w])
+    out = tf.reduce_max(tf.reduce_max(inp_reshaped, axis=3), axis=4)
+    return out
 
 
 def convolve(inp, weights, stride=1, pad=0):
@@ -33,7 +41,12 @@ def convolve(inp, weights, stride=1, pad=0):
     o_h = tf.cast(((i_h + 2 * pad - f_h) / stride + 1), dtype=tf.int32)
     o_w = tf.cast(((i_w + 2 * pad - f_w) / stride + 1), dtype=tf.int32)
 
-    inp_col = img_to_col(inp, f_w, f_h, o_h, o_w, pad, stride)
+    #inp_col = img_to_col(inp, f_w, f_h, o_h, o_w, pad, stride)
+    #inp_ = tf.transpose(inp, perm=[0, 2, 3, 1])
+    #inp_col = tf.extract_image_patches(inp, ksizes=[1, 3, 3, 1], strides=[1, 1, 1, 1], rates=[1, 1, 1, 1], padding="SAME")
+    #inp_col = tf.transpose(tf.reshape(inp_col, [-1, f_h*f_w*n_c]), perm=[1, 0])
+
+    inp_col = tf.py_func(im2col, [inp, f_w, f_h, o_h, o_w, pad, stride], tf.float32)
     w_col = tf.reshape(weights, [n_f, -1])
 
     output = tf.matmul(w_col, inp_col)
@@ -43,31 +56,36 @@ def convolve(inp, weights, stride=1, pad=0):
 
 def batch_normalize(inp, beta, gamma, running_mean_var, training=False, epsilon=1e-8):
     N, D, H, W = tf.shape(inp)[0], tf.shape(inp)[1], tf.shape(inp)[2], tf.shape(inp)[3]
-    #running_mean, running_variance = running_mean_var[0], running_mean_var[1]
 
     M = N*H*W
     x = tf.reshape(tf.transpose(inp, [0, 2, 3, 1]), [M, D])
 
-    if training:
+    def is_training():
         mean = (1. / tf.cast(M, dtype=tf.float32)) * tf.reduce_sum(x, axis=0)
         xmu = x - mean
         variance = (1. / tf.cast(M, dtype=tf.float32)) * tf.reduce_sum(xmu * xmu, axis=0) + epsilon
         inv_std = 1. / tf.sqrt(variance)
         x_hat = xmu * inv_std
 
-        mean_var = tf.concat((mean, variance), axis=0)
-        running_mean_var = tf.cond(tf.equal(tf.shape(running_mean_var)[0], 1),
-                lambda: mean_var,
-                lambda: 0.9 * running_mean_var + 0.1 * mean_var)
-    else:
+        mean_var0 = tf.concat((mean, variance), axis=0)
+        mean_var = tf.cond(tf.equal(tf.shape(running_mean_var)[0], 2),
+                                   lambda: mean_var0,
+                                   lambda: 0.9 * running_mean_var + 0.1 * mean_var0)
+        return xmu, inv_std, x_hat, mean_var
+
+    def not_training():
         xmu = x - running_mean_var[0]
         inv_std = tf.sqrt(running_mean_var[1])
         x_hat = xmu * inv_std
+        return xmu, inv_std, x_hat, running_mean_var
 
-    norm_inp = gamma * x_hat + beta
-    norm_inp = tf.transpose(tf.reshape(norm_inp, [N, H, W, D]), [0, 3, 1, 2])
+    xmu, inv_std, x_hat, running_mean_var = tf.cond(tf.equal(training, True),
+                                                    is_training, not_training)
+
+    x_hat = tf.transpose(tf.reshape(x_hat, [N, H, W, D]), [0, 3, 1, 2])
+    norm_inp = tf.reshape(gamma, [1, tf.shape(gamma)[0], 1, 1]) * x_hat + tf.reshape(beta, [1, tf.shape(beta)[0], 1, 1])
     cache = (xmu, inv_std, x_hat, gamma)
-    return norm_inp, cache, running_mean_var
+    return tf.reshape(norm_inp, [N, D, H, W]), cache, running_mean_var
 
 
 def full_conn(inp, weights):
@@ -79,13 +97,14 @@ def full_conn(inp, weights):
 ******************************************"""
 
 def relu(inp):
-    inp_reshaped = tf.reshape(inp, [-1])
-    out = tf.where(inp_reshaped >= [0], inp_reshaped, [0])
-    return tf.reshape(out, tf.shape(inp))
+    #zeros = tf.zeros_like(inp)
+    #return tf.where(tf.greater_equal(inp, zeros), inp, zeros)
+    return leaky_relu(inp)
 
 
 def leaky_relu(inp, alpha=0.01):
-    return tf.where(inp >= 0, inp, inp*alpha)
+    zeros = tf.zeros_like(inp)
+    return tf.where(tf.greater_equal(inp, zeros), inp, inp*alpha)
 
 
 def sigmoid(inp):
@@ -135,7 +154,8 @@ def convolve_backprop(delta_out, inp, weights, pad=0, stride=1):
     fm_h = tf.constant(((h + 2 * pad - h_w) / stride + 1), dtype=tf.int32)
     fm_w = tf.constant(((w + 2 * pad - w_w) / stride + 1), dtype=tf.int32)
     weights2d = tf.reshape(weights, [n_fm, -1])
-    inp2d = img_to_col(inp, h_w, w_w, fm_h, fm_w, pad, stride)
+    #inp2d = img_to_col(inp, h_w, w_w, fm_h, fm_w, pad, stride)
+    inp2d = tf.py_func(im2col, [inp, h_w, w_w, fm_h, fm_w, pad, stride], tf.float32)
 
     dO = tf.transpose(delta_out, perm=[1, 2, 3, 0])
     dO = tf.reshape(dO, [n_fm, -1])
@@ -153,7 +173,8 @@ def pool_backprop(delta_out, inp, p_h, p_w, stride, pad=0):
     o_w = tf.constant(((w + 2 * pad - p_w) / stride + 1), dtype=tf.int32)
 
     inp_reshaped = tf.reshape(inp, [-1, 1, h, w])
-    inp_col = img_to_col(inp_reshaped, p_h, p_w, o_h, o_w, pad, stride)
+    #inp_col = img_to_col(inp_reshaped, p_h, p_w, o_h, o_w, pad, stride)
+    inp_col = tf.py_func(im2col, [inp_reshaped, p_h, p_w, o_h, o_w, pad, stride], tf.float32)
 
     err = tf.reshape(tf.transpose(delta_out, perm=[2, 3, 0, 1]), -1)
 
@@ -238,23 +259,16 @@ def get_col_indices(inp_shape, f_h, f_w, o_h, o_w, stride):
     x1 = stride * tf.tile(tf.range(o_w), [o_h])
     x = tf.reshape(x0, [-1, 1]) + tf.reshape(x1, [1, -1])
 
-    z_flat = tf.reshape(z, [-1])
-    y_flat = tf.reshape(y, [-1])
-    x_flat = tf.reshape(x, [-1])
-
-    zyx = tf.concat([z_flat,y_flat,x_flat], axis=0)
-    zyx = tf.reshape(zyx, [tf.shape(y)[0], tf.shape(y)[1], 3])
-
-    return zyx
+    return z, y, x
 
 
 def img_to_col(inp, f_h, f_w, o_h, o_w, pad, stride):
-    zyx = get_col_indices(tf.shape(inp), f_h, f_w, o_h, o_w, stride)
+    z, y, x = get_col_indices(tf.shape(inp), f_h, f_w, o_h, o_w, stride)
 
     inp_padded = tf.pad(inp, [[0, 0], [0, 0], [pad, pad], [pad, pad]], mode='CONSTANT')
 
     indices = tf.range(tf.shape(inp)[0])
-    col = tf.gather_nd(inp_padded, zyx)
+    col = tf.gather_nd(inp_padded, z, y, x)
     col = tf.transpose(col, perm=[1, 2, 0])
     return tf.reshape(col, [(f_h * f_w * tf.shape(inp)[1]), -1])
 
