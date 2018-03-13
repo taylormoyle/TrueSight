@@ -352,20 +352,24 @@ with tf.Session() as sess:
                 feed_dict={inp_placeholder: val_batch,
                            training_placeholder: False,
                            ground_truth_placeholder: val_lbls}) / float(num_val_batches)
-            print("\r%d/%d. current training accuracy: %g" % (vb, num_val_batches, train_accuracy), end='')
-        print("\ntraining accuracy: %g" % train_accuracy)
+            print("\r%d/%d. current training accuracy: %g" % (vb+1, num_val_batches, train_accuracy), end='')
+        print("\rtraining accuracy: %g" % train_accuracy)
+
         for b in range(num_train_batches):
             train_batch, train_lbl_keys = sess.run((train_img_batch, train_label_batch))
             train_lbls = [train_labels[l.decode()] for l in train_lbl_keys]
             train_step.run(feed_dict={inp_placeholder: train_batch,
                                       training_placeholder: True,
                                       ground_truth_placeholder: train_lbls})
-
+            print("\r%d/%d training batch.." % (b+1, num_train_batches), end='')
+        print("")
         if e % 25 == 0 and e != 0:
             # save checkpoint
+            print("Saving checkpoint...")
             save_path = os.path.join(save_dir, "conv6_208_%g.ckpt" % train_accuracy)
             saver.save(sess, save_path)
 
+    print("running test accuracy..")
     num_test_batches = int(len(test_data) / batch_size)
     test_accuracy = 0
     for _ in range(num_test_batches):
@@ -379,6 +383,7 @@ with tf.Session() as sess:
     print("test accuracy: %g" % test_accuracy)
 
     # save end
+    print("Saving final train run..")
     save_path = os.path.join(save_dir, "conv6_208_%g.ckpt" % test_accuracy)
     saver.save(sess, save_path)
 

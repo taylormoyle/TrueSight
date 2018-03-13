@@ -69,7 +69,7 @@ def batch_normalize(inp, beta, gamma, running_mean_var, training=False, epsilon=
 
         mean_var0 = tf.concat((mean, variance), axis=0)
         mean_var = tf.cond(tf.equal(tf.shape(running_mean_var)[0], 2),
-                                   lambda: mean_var0,
+                                   lambda: running_mean_var.assign(mean_var0),
                                    lambda: 0.9 * running_mean_var + 0.1 * mean_var0)
         return xmu, inv_std, x_hat, mean_var
 
