@@ -237,65 +237,65 @@ class Neural_Network:
 
     def init_facial_rec_weights(self, infos):
         n_fm1, f_h, f_w, _, _ = infos[0]
-        self.w_conv1 = op.initialize_weights((n_fm1, 3, f_h, f_w), 'w_conv1')
-        self.w_bnb1 = op.initialize_weights((n_fm1,), 'w_bnb1')
-        self.w_bng1 = op.initialize_weights((n_fm1,), 'w_bng1')
-        self.running_mean_var_bn1 = tf.Variable([[0.],[1.]], trainable=False, validate_shape=False)
+        self.w_conv1 = op.initialize_conv_weights((n_fm1, 3, f_h, f_w), 'w_conv1')
+        self.w_bnb1 = op.initialize_2d_weights((n_fm1,1), 'w_bnb1')
+        self.w_bng1 = op.initialize_2d_weights((n_fm1,1), 'w_bng1')
+        self.running_mean_var_bn1 = tf.Variable([[0.],[1.]], trainable=False, validate_shape=False, name="running_bn1")
 
         n_fm2, f_h, f_w, _, _ = infos[1]
-        self.w_conv2 = op.initialize_weights((n_fm2, n_fm1, f_h, f_w), 'w_conv2')
-        self.w_bnb2 = op.initialize_weights((n_fm2,), 'w_bnb2')
-        self.w_bng2 = op.initialize_weights((n_fm2,), 'w_bnb2')
-        self.running_mean_var_bn2 = tf.Variable([[0.],[1.]], trainable=False, validate_shape=False)
+        self.w_conv2 = op.initialize_conv_weights((n_fm2, n_fm1, f_h, f_w), 'w_conv2')
+        self.w_bnb2 = op.initialize_2d_weights((n_fm2,1), 'w_bnb2')
+        self.w_bng2 = op.initialize_2d_weights((n_fm2,1), 'w_bnb2')
+        self.running_mean_var_bn2 = tf.Variable([[0.],[1.]], trainable=False, validate_shape=False, name="running_bn2")
 
         n_fm3, f_h, f_w, _, _ = infos[3]
-        self.w_conv3 = op.initialize_weights((n_fm3, n_fm2, f_h, f_w), 'w_conv3')
-        self.w_bnb3 = op.initialize_weights((n_fm3,), 'w_bnb3')
-        self.w_bng3 = op.initialize_weights((n_fm3,), 'w_bng3')
+        self.w_conv3 = op.initialize_conv_weights((n_fm3, n_fm2, f_h, f_w), 'w_conv3')
+        self.w_bnb3 = op.initialize_2d_weights((n_fm3,1), 'w_bnb3')
+        self.w_bng3 = op.initialize_2d_weights((n_fm3,1), 'w_bng3')
         self.running_mean_var_bn3 = tf.Variable([[0.],[1.]], trainable=False, validate_shape=False)
 
         n_fm4, f_h, f_w, _, _ = infos[4]
-        self.w_conv4 = op.initialize_weights((n_fm4, n_fm3, f_h, f_w), 'w_conv4')
-        self.w_bnb4 = op.initialize_weights((n_fm4,), 'w_bnb4')
-        self.w_bng4 = op.initialize_weights((n_fm4,), 'w_bng4')
+        self.w_conv4 = op.initialize_conv_weights((n_fm4, n_fm3, f_h, f_w), 'w_conv4')
+        self.w_bnb4 = op.initialize_2d_weights((n_fm4,1), 'w_bnb4')
+        self.w_bng4 = op.initialize_2d_weights((n_fm4,1), 'w_bng4')
         self.running_mean_var_bn4 = tf.Variable([[0.],[1.]], trainable=False, validate_shape=False)
 
         n_fm5, f_h, f_w, _, _ = infos[6]
-        self.w_conv5 = op.initialize_weights((n_fm5, n_fm4, f_h, f_w), 'w_conv5')
-        self.w_bnb5 = op.initialize_weights((n_fm5,), 'w_bnb5')
-        self.w_bng5 = op.initialize_weights((n_fm5,), 'w_bng5')
+        self.w_conv5 = op.initialize_conv_weights((n_fm5, n_fm4, f_h, f_w), 'w_conv5')
+        self.w_bnb5 = op.initialize_2d_weights((n_fm5,1), 'w_bnb5')
+        self.w_bng5 = op.initialize_2d_weights((n_fm5,1), 'w_bng5')
         self.running_mean_var_bn5 = tf.Variable([[0.],[1.]], trainable=False, validate_shape=False)
 
         n_fm6, f_h, f_w, _, _ = infos[8]
-        self.w_conv6 = op.initialize_weights((n_fm6, n_fm5, f_h, f_w), 'w_conv6')
-        self.w_bnb6 = op.initialize_weights((n_fm6,), 'w_bnb6')
-        self.w_bng6 = op.initialize_weights((n_fm6,), 'w_bng6')
+        self.w_conv6 = op.initialize_conv_weights((n_fm6, n_fm5, f_h, f_w), 'w_conv6')
+        self.w_bnb6 = op.initialize_2d_weights((n_fm6,1), 'w_bnb6')
+        self.w_bng6 = op.initialize_2d_weights((n_fm6,1), 'w_bng6')
         self.running_mean_var_bn6 = tf.Variable([[0.],[1.]], trainable=False, validate_shape=False)
 
         """
         n_fm7, f_h, f_w, _, _ = infos[10]
-        self.w_conv7 = op.initialize_weights((n_fm7, n_fm6, f_h, f_w), 'w_conv7')
-        self.w_bnb7 = op.initialize_weights((n_fm7,), 'w_bnb7')
-        self.w_bng7 = op.initialize_weights((n_fm7,), 'w_bng7')
+        self.w_conv7 = op.initialize_conv_weights((n_fm7, n_fm6, f_h, f_w), 'w_conv7')
+        self.w_bnb7 = op.initialize_2d_weights((n_fm7,1), 'w_bnb7')
+        self.w_bng7 = op.initialize_2d_weights((n_fm7,1), 'w_bng7')
         self.running_mean_var_bn7 = tf.Variable([[0.],[1.]], trainable=False, validate_shape=False)
 
         n_fm8, f_h, f_w, _, _ = infos[12]
-        self.w_conv8 = op.initialize_weights((n_fm8, n_fm7, f_h, f_w), 'w_conv8')
-        self.w_bnb8 = op.initialize_weights((n_fm8,), 'w_bnb8')
-        self.w_bng8 = op.initialize_weights((n_fm8,), 'w_bng8')
+        self.w_conv8 = op.initialize_conv_weights((n_fm8, n_fm7, f_h, f_w), 'w_conv8')
+        self.w_bnb8 = op.initialize_2d_weights((n_fm8,1), 'w_bnb8')
+        self.w_bng8 = op.initialize_2d_weights((n_fm8,1), 'w_bng8')
         self.running_mean_var_bn8 = tf.Variable([[0.],[1.]], trainable=False, validate_shape=False)
 
         n_fm9, f_h, f_w, _, _ = infos[13]
-        self.w_conv9 = op.initialize_weights((n_fm9, n_fm8, f_h, f_w), 'w_conv9')
-        self.w_bnb9 = op.initialize_weights((n_fm9,), 'w_bnb9')
-        self.w_bng9 = op.initialize_weights((n_fm9,), 'w_bng9')
+        self.w_conv9 = op.initialize_conv_weights((n_fm9, n_fm8, f_h, f_w), 'w_conv9')
+        self.w_bnb9 = op.initialize_2d_weights((n_fm9,1), 'w_bnb9')
+        self.w_bng9 = op.initialize_2d_weights((n_fm9,1), 'w_bng9')
         self.running_mean_var_bn9 = tf.Variable([[0.],[1.]], trainable=False, validate_shape=False)
 
         n_fm10, f_h, f_w, _, _ = infos[14]
-        self.w_conv10 = op.initialize_weights((n_fm10, n_fm9, f_h, f_w), 'w_conv10')
+        self.w_conv10 = op.initialize_conv_weights((n_fm10, n_fm9, f_h, f_w), 'w_conv10')
         """
         fc_in = 13 * 13 * 64
-        self.w_full = op.initialize_weights((fc_in, 20), 'w_full')
+        self.w_full = op.initialize_2d_weights((fc_in, 20), 'w_full')
 
     def update_weights(self, weights, gradients, learning_rate, batch_size):
         for w in weights:

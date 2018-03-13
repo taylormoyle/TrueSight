@@ -389,18 +389,20 @@ def non_max_suppression(bounding_boxes, conf_threshold, IoU_threshold):
     return tf.gather(bounding_boxes, predictions)
 
 
-def initialize_weights(shape, name):
-    #if tf.size(shape) == 4:
-      # f, d, h, w = shape
-       # w_in = d * h * w
-       # w_out = f
-    #else:
-      #  w_in = shape[0]
-       # w_out = shape[1]
-    #std = 2 / (w_in + w_out)
-    weights = tf.truncated_normal(shape, stddev=0.01, name=name)
+def initialize_conv_weights(shape, name):
+    f, d, h, w = shape
+    w_in = d * h * w
+    w_out = f
+
+    std = 2 / (w_in + w_out)
+    weights = tf.truncated_normal(shape, stddev=std, name=name)
     return tf.Variable(weights)
 
+def initialize_2d_weights(shape, name):
+    w_in, w_out = shape
+    std = 2 / (w_in + w_out)
+    weights = tf.truncated_normal(shape, stddev=std, name=name)
+    return tf.Variable(weights)
 
 def update_weights(weights, gradients, learning_rate, batch_size):
     return weights - (learning_rate / batch_size * gradients)

@@ -2,13 +2,14 @@ import tensorflow as tf
 import numpy as np
 import Operations_tf as op
 import Neural_Network as nn
-from PIL import Image
 import glob
 import os
 import xml.etree.ElementTree as ET
 import random as rand
 import time as t
 import random
+
+from tensorflow.python import debug as tf_debug
 
 RES = 208
 DELTA_HUE = 0.032
@@ -302,7 +303,7 @@ print(t.time() - s)
 """
 '''    TENSORFLOW TRAINGING SCRIPT   '''
 
-epochs = 10
+epochs = 300
 batch_size = 96
 learning_rate = 1e-5
 
@@ -333,6 +334,9 @@ saver = tf.train.Saver()
 
 s = t.time()
 with tf.Session() as sess:
+    sess = tf_debug.LocalCLIDebugWrapperSession(sess)
+    sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
+
     sess.run(tf.local_variables_initializer())
     sess.run(tf.global_variables_initializer())
     coord = tf.train.Coordinator()
