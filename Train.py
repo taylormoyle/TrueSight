@@ -304,9 +304,9 @@ print(t.time() - s)
 """
 '''    TENSORFLOW TRAINGING SCRIPT   '''
 
-epochs = 5
-batch_size = 20
-learning_rate = 1e-5
+epochs = 25
+batch_size = 24
+learning_rate = 1e-3
 
 dataset, labels = prep_data(img_dir, xml_dir)
 train_data, train_labels = filter_data(dataset['training'], labels, classes)
@@ -363,12 +363,12 @@ with tf.Session() as sess:
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(coord=coord)
 
-    num_train_batches = int(len(train_data) / batch_size / 4)
+    num_train_batches = int(len(train_data) / batch_size)
     print(num_train_batches)
     for e in range(epochs):
         print("epoch: ", e)
         print('getting validation accuracy...')
-        num_val_batches = int(len(val_data) / batch_size / 2)
+        num_val_batches = int(len(val_data) / batch_size)
         train_correct = 0.
         for vb in range(num_val_batches):
             val_batch, val_lbl_keys = sess.run((val_img_batch, val_label_batch))
@@ -379,8 +379,8 @@ with tf.Session() as sess:
                            ground_truth_placeholder: val_lbls})
             train_correct += correct
             print("\r%d/%d. correct on validation: %g" % (vb+1, num_val_batches, train_correct), end='')
-            test_writer.add_summary(summary, vb)
-        train_accuracy = train_correct / float(len(val_data))
+            test_writer.add_summary(summary, global_step=(e*num_val_batches + vb))
+        train_accuracy = train_correct / float(num_val_batches*batch_size)
         print("\rtraining accuracy: %g" % train_accuracy)
 
         for b in range(num_train_batches):
@@ -390,10 +390,10 @@ with tf.Session() as sess:
                                       training_placeholder: True,
                                       ground_truth_placeholder: train_lbls})
             print("\r%d/%d training batch.." % (b+1, num_train_batches), end='')
-            train_writer.add_summary(summary, b)
+            train_writer.add_summary(summary, global_step=(e*num_train_batches + b))
 
         print("")
-        if e % 25 == 0 and e != 0:
+        if e % 5 == 0 and e != 0:
             # save checkpoint
             print("Saving checkpoint...")
             save_path = os.path.join(save_dir, "conv6_208_%g.ckpt" % train_accuracy)
@@ -409,7 +409,7 @@ with tf.Session() as sess:
             feed_dict={inp_placeholder: test_batch,
                        training_placeholder: False,
                        ground_truth_placeholder: test_lbls})
-    test_accuracy = test_correct / float(len(test_data))
+    test_accuracy = test_correct / float(num_train_batches*batch_size)
     print("test accuracy: %g" % test_accuracy)
 
     # save end
