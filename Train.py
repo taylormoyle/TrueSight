@@ -330,7 +330,13 @@ with tf.name_scope('loss'):
 tf.summary.scalar('loss', cross_entropy)
 
 with tf.name_scope('training'):
-    train_step = tf.train.AdamOptimizer(learning_rate).minimize(cross_entropy)
+    optimizer = tf.train.AdamOptimizer(learning_rate)
+    gradients, variables = zip(*optimizer.compute_gradients(cross_entropy))
+    gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
+
+    gradients = [tf.where(tf.is_nan(grad), tf.zeros_like(grad), grad) if grad is not None
+                 else grad for grad in gradients]
+    train_step = optimizer.apply_gradients(zip(gradients, variables))
 
 with tf.name_scope('correct_predictions'):
     correct_prediction = tf.equal(tf.argmax(pred_placeholder, 1), tf.argmax(ground_truth_placeholder, 1))

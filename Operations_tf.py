@@ -417,22 +417,20 @@ def normalize(inp, epsilon=1e-8):
     inv_std = 1 / tf.sqrt(variance + epsilon)
     return inp_minus_mean * inv_std
 
-def add_layer_summeries(name, conv, relu, batch_norm, pool=None):
-    with tf.name_scope('layer_summeries'):
-        tf.summary.histogram(name + '_conv', conv)
-        tf.summary.histogram(name + '_relu', relu)
-        tf.summary.histogram(name + '_batch_norm', batch_norm)
+def add_layer_summaries(layer, conv, relu, batch_norm, pool=None):
+    tf.summary.histogram('conv_' + layer, conv)
+    tf.summary.histogram('relu_' + layer , relu)
+    tf.summary.histogram('batch_norm_' + layer, batch_norm)
 
-        if pool is not None:
-            tf.summary.histogram(name + '_pool', pool)
+    if pool is not None:
+        tf.summary.histogram('pool', pool)
 
-def add_weight_summeries(name, weights):
-    with tf.name_scope('weight_summeries'):
-        name = name + 'vars'
+def add_weight_summaries(name, weights):
+    with tf.name_scope(name):
         mean = tf.reduce_mean(weights)
-        tf.summary.scalar(name + '_mean', mean)
+        tf.summary.scalar('mean', mean)
         stddev = tf.sqrt(tf.reduce_mean(tf.square(weights - mean)))
-        tf.summary.scalar(name + '_stddev', stddev)
-        tf.summary.scalar(name + '_max', tf.reduce_max(weights))
-        tf.summary.scalar(name + '_min', tf.reduce_min(weights))
-        tf.summary.histogram(name + '_histogram', weights)
+        tf.summary.scalar('stddev', stddev)
+        tf.summary.scalar('max', tf.reduce_max(weights))
+        tf.summary.scalar('min', tf.reduce_min(weights))
+        tf.summary.histogram('histogram', weights)
