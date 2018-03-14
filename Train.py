@@ -258,7 +258,8 @@ infos = [[16, 3, 3, 1, 1],      # output shape (416, 416, 16)
 hypers = [7]
 img_dir = "data\\VOC2012\\JPEGImages"
 xml_dir = "data\\VOC2012\\Annotations"
-save_dir = "models\\"
+save_dir = "models"
+log_dir = "logs"
 classes = ['person', 'dog', 'aeroplane', 'bus', 'bird', 'boat', 'car', 'bottle',
            'cat', 'horse', 'diningtable', 'cow', 'train', 'motorbike', 'bicycle',
            'sheep', 'tvmonitor', 'chair', 'sofa', 'pottedplant']
@@ -303,8 +304,8 @@ print(t.time() - s)
 """
 '''    TENSORFLOW TRAINGING SCRIPT   '''
 
-epochs = 300
-batch_size = 96
+epochs = 5
+batch_size = 20
 learning_rate = 1e-5
 
 dataset, labels = prep_data(img_dir, xml_dir)
@@ -323,49 +324,68 @@ training_placeholder = tf.placeholder(tf.bool)
 pred_placeholder = net.forward_prop(infos, inp_placeholder, training=training_placeholder)
 
 ground_truth_placeholder = tf.placeholder(tf.float32)
-cross_entropy = tf.reduce_mean(
-    tf.nn.softmax_cross_entropy_with_logits_v2(labels=ground_truth_placeholder, logits=pred_placeholder))
+with tf.name_scope('loss'):
+    cross_entropy = tf.reduce_mean(
+        tf.nn.softmax_cross_entropy_with_logits_v2(labels=ground_truth_placeholder, logits=pred_placeholder))
+tf.summary.scalar('loss', cross_entropy)
 
-train_step = tf.train.AdamOptimizer(learning_rate).minimize(cross_entropy)
-correct_prediction = tf.equal(tf.argmax(pred_placeholder, 1), tf.argmax(ground_truth_placeholder, 1))
+with tf.name_scope('training'):
+    train_step = tf.train.AdamOptimizer(learning_rate).minimize(cross_entropy)
+
+with tf.name_scope('correct_predictions'):
+    correct_prediction = tf.equal(tf.argmax(pred_placeholder, 1), tf.argmax(ground_truth_placeholder, 1))
+    num_correct = tf.reduce_sum(tf.cast(correct_prediction, tf.float32))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+tf.summary.scalar('number_correct', num_correct)
 
 saver = tf.train.Saver()
 
+merged = tf.summary.merge_all()
+
 s = t.time()
 with tf.Session() as sess:
-    sess = tf_debug.LocalCLIDebugWrapperSession(sess)
-    sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
+    #sess = tf_debug.LocalCLIDebugWrapperSession(sess)
+    #sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
+
+    test_log_dir = os.path.join(log_dir, 'test')
+    train_log_dir = os.path.join(log_dir, 'train')
+    train_writer = tf.summary.FileWriter(train_log_dir, sess.graph)
+    test_writer = tf.summary.FileWriter(test_log_dir, sess.graph)
 
     sess.run(tf.local_variables_initializer())
     sess.run(tf.global_variables_initializer())
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(coord=coord)
 
-    num_train_batches = int(len(train_data) / batch_size)
+    num_train_batches = int(len(train_data) / batch_size / 4)
     print(num_train_batches)
     for e in range(epochs):
         print("epoch: ", e)
         print('getting validation accuracy...')
-        num_val_batches = int(len(val_data) / batch_size)
-        train_accuracy = 0.
+        num_val_batches = int(len(val_data) / batch_size / 2)
+        train_correct = 0.
         for vb in range(num_val_batches):
             val_batch, val_lbl_keys = sess.run((val_img_batch, val_label_batch))
             val_lbls = [val_labels[l.decode()] for l in val_lbl_keys]
-            train_accuracy += accuracy.eval(
+            summary, correct = sess.run([merged, num_correct],
                 feed_dict={inp_placeholder: val_batch,
                            training_placeholder: False,
-                           ground_truth_placeholder: val_lbls}) / float(num_val_batches)
-            print("\r%d/%d. current training accuracy: %g" % (vb+1, num_val_batches, train_accuracy), end='')
+                           ground_truth_placeholder: val_lbls})
+            train_correct += correct
+            print("\r%d/%d. correct on validation: %g" % (vb+1, num_val_batches, train_correct), end='')
+            test_writer.add_summary(summary, vb)
+        train_accuracy = train_correct / float(len(val_data))
         print("\rtraining accuracy: %g" % train_accuracy)
 
         for b in range(num_train_batches):
             train_batch, train_lbl_keys = sess.run((train_img_batch, train_label_batch))
             train_lbls = [train_labels[l.decode()] for l in train_lbl_keys]
-            train_step.run(feed_dict={inp_placeholder: train_batch,
+            summary, _ = sess.run([merged, train_step], feed_dict={inp_placeholder: train_batch,
                                       training_placeholder: True,
                                       ground_truth_placeholder: train_lbls})
             print("\r%d/%d training batch.." % (b+1, num_train_batches), end='')
+            train_writer.add_summary(summary, b)
+
         print("")
         if e % 25 == 0 and e != 0:
             # save checkpoint
@@ -374,16 +394,16 @@ with tf.Session() as sess:
             saver.save(sess, save_path)
 
     print("running test accuracy..")
-    num_test_batches = int(len(test_data) / batch_size)
-    test_accuracy = 0
+    num_test_batches = int(len(test_data) / batch_size / 2)
+    test_correct = 0
     for _ in range(num_test_batches):
         test_batch, test_lbl_keys = sess.run((test_img_batch, test_label_batch))
         test_lbls = [test_labels[l.decode()] for l in test_lbl_keys]
-        test_accuracy += accuracy.eval(
+        test_correct += num_correct.eval(
             feed_dict={inp_placeholder: test_batch,
                        training_placeholder: False,
                        ground_truth_placeholder: test_lbls})
-    test_accuracy /= num_test_batches
+    test_accuracy = test_correct / float(len(test_data))
     print("test accuracy: %g" % test_accuracy)
 
     # save end

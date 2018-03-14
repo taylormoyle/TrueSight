@@ -54,7 +54,7 @@ def convolve(inp, weights, stride=1, pad=0):
     return tf.transpose(output, perm=[3, 0, 1, 2])
 
 
-def batch_normalize(inp, beta, gamma, running_mean_var, training=False, epsilon=1e-8):
+def batch_normalize(inp, beta, gamma, running_mean_var, training=False, decay=0.9, epsilon=1e-8):
     N, D, H, W = tf.shape(inp)[0], tf.shape(inp)[1], tf.shape(inp)[2], tf.shape(inp)[3]
 
     M = N*H*W
@@ -67,11 +67,11 @@ def batch_normalize(inp, beta, gamma, running_mean_var, training=False, epsilon=
         inv_std = 1. / tf.sqrt(variance)
         x_hat = xmu * inv_std
 
-        mean_var0 = tf.concat((mean, variance), axis=0)
-        mean_var = tf.cond(tf.equal(tf.shape(running_mean_var)[0], 2),
-                                   lambda: running_mean_var.assign(mean_var0),
-                                   lambda: 0.9 * running_mean_var + 0.1 * mean_var0)
-        return xmu, inv_std, x_hat, mean_var
+        mean_var = tf.stack((mean, variance), axis=0)
+        train_mean_var = tf.assign(running_mean_var,
+                                   decay * running_mean_var + (1-decay) * mean_var)
+
+        return xmu, inv_std, x_hat, train_mean_var
 
     def not_training():
         xmu = x - running_mean_var[0]
@@ -82,10 +82,12 @@ def batch_normalize(inp, beta, gamma, running_mean_var, training=False, epsilon=
     xmu, inv_std, x_hat, running_mean_var = tf.cond(tf.equal(training, True),
                                                     is_training, not_training)
 
-    x_hat = tf.transpose(tf.reshape(x_hat, [N, H, W, D]), [0, 3, 1, 2])
-    norm_inp = tf.reshape(gamma, [1, tf.shape(gamma)[0], 1, 1]) * x_hat + tf.reshape(beta, [1, tf.shape(beta)[0], 1, 1])
-    cache = (xmu, inv_std, x_hat, gamma)
-    return tf.reshape(norm_inp, [N, D, H, W]), cache, running_mean_var
+    with tf.control_dependencies([running_mean_var]):
+        x_hat = tf.transpose(tf.reshape(x_hat, [N, H, W, D]), [0, 3, 1, 2])
+        norm_inp = tf.reshape(gamma, [1, tf.shape(gamma)[0], 1, 1]) * x_hat + \
+                   tf.reshape(beta, [1, tf.shape(beta)[0], 1, 1])
+        cache = (xmu, inv_std, x_hat, gamma)
+        return tf.reshape(norm_inp, [N, D, H, W]), cache, running_mean_var
 
 
 def full_conn(inp, weights):
@@ -414,3 +416,23 @@ def normalize(inp, epsilon=1e-8):
     variance = tf.reshape(tf.reduce_mean(inp_minus_mean * inp_minus_mean, axis=[2, 3]), [-1, 3, 1, 1])
     inv_std = 1 / tf.sqrt(variance + epsilon)
     return inp_minus_mean * inv_std
+
+def add_layer_summeries(name, conv, relu, batch_norm, pool=None):
+    with tf.name_scope('layer_summeries'):
+        tf.summary.histogram(name + '_conv', conv)
+        tf.summary.histogram(name + '_relu', relu)
+        tf.summary.histogram(name + '_batch_norm', batch_norm)
+
+        if pool is not None:
+            tf.summary.histogram(name + '_pool', pool)
+
+def add_weight_summeries(name, weights):
+    with tf.name_scope('weight_summeries'):
+        name = name + 'vars'
+        mean = tf.reduce_mean(weights)
+        tf.summary.scalar(name + '_mean', mean)
+        stddev = tf.sqrt(tf.reduce_mean(tf.square(weights - mean)))
+        tf.summary.scalar(name + '_stddev', stddev)
+        tf.summary.scalar(name + '_max', tf.reduce_max(weights))
+        tf.summary.scalar(name + '_min', tf.reduce_min(weights))
+        tf.summary.histogram(name + '_histogram', weights)
