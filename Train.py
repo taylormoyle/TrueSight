@@ -143,7 +143,7 @@ def load_data(filenames, batch_size, num_epochs, training=True):
     filename_queue = tf.train.string_input_producer(
         filenames, num_epochs=num_epochs, shuffle=True)
     image, label = load_img(filename_queue, training)
-    min_after_dequeue = 100 
+    min_after_dequeue = 300 if training else 100
     capacity = (min_after_dequeue + 3 * batch_size) if training else batch_size
     image_batch, label_batch = tf.train.shuffle_batch(
         [image, label], batch_size=batch_size, capacity=capacity,
@@ -239,17 +239,17 @@ def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
 ''''     TRAINING SCRIPT     '''
 
 
-infos = [[16, 3, 3, 1, 1],      # output shape (416, 416, 16)
-         [16, 3, 3, 1, 1],      # output shape (416, 416, 16)
+infos = [[32, 3, 3, 1, 1],      # output shape (416, 416, 16)
+         [32, 3, 3, 1, 1],      # output shape (416, 416, 16)
          [0, 2, 2, 2, 0],       # output shape (208, 208, 16)
-         [32, 3, 3, 1, 1],      # output shape (208, 208, 32)
-         [32, 3, 3, 1, 1],      # output shape (208, 208, 32)
+         [64, 3, 3, 1, 1],      # output shape (208, 208, 32)
+         [128, 3, 3, 1, 1],      # output shape (208, 208, 32)
          [0, 2, 2, 2, 0],       # output shape (104, 104, 32)
-         [64, 3, 3, 1, 1],      # output shape (104, 104, 64)
+         [256, 3, 3, 1, 1],      # output shape (104, 104, 64)
          [0, 2, 2, 2, 0],       # output shape ( 52,  52, 64)
-         [64, 3, 3, 1, 1],     # output shape ( 52,  52, 128)
+         [512, 3, 3, 1, 1],     # output shape ( 52,  52, 128)
          [0, 2, 2, 2, 0],       # output shape ( 26,  26, 128)
-         [256, 3, 3, 1, 1],     # output shape ( 26,  26, 256)
+         [512, 3, 3, 1, 1],     # output shape ( 26,  26, 256)
          [0, 2, 2, 2, 0],       # output shape ( 13,  13, 256)
          [512, 1, 1, 1, 0],     # output shape ( 13,  13, 512)
          [512, 1, 1, 1, 0],     # output shape ( 13,  13, 512)
@@ -268,18 +268,25 @@ classes = ['person', 'dog', 'aeroplane', 'bus', 'bird', 'boat', 'car', 'bottle',
 '''    TENSORFLOW TRAINGING SCRIPT   '''
 
 epochs = 1000
-batch_size = 24
-learning_rate = 1e-5
-test_size = 300
+batch_size = 32
+initital_learning_rate = 0.1
+ending_learning_rate = 1e-5
+decay_steps = 100
+power = 4
+momentum = 0.9
+weight_decay = 0.0005
+val_batch_size = 200
+test_batch_size = 128
 
 dataset, labels = prep_data(img_dir, xml_dir)
 train_data, train_labels = filter_data(dataset['training'], labels, classes)
 val_data, val_labels = filter_data(dataset['validation'], labels, classes)
 test_data, test_labels = filter_data(dataset['test'], labels, classes)
 
-train_img_batch, train_label_batch = load_data(train_data, batch_size, epochs)
-val_img_batch, val_label_batch = load_data(val_data, test_size, None, training=False)
-test_img_batch, test_label_batch = load_data(test_data, test_size, None, training=False)
+with tf.device('/cpu:0'):
+    train_img_batch, train_label_batch = load_data(train_data, batch_size, epochs)
+val_img_batch, val_label_batch = load_data(val_data, val_batch_size, None, training=False)
+test_img_batch, test_label_batch = load_data(test_data, test_batch_size, None, training=False)
 
 net = nn.Neural_Network("facial_recognition", infos, hypers)
 
@@ -294,12 +301,27 @@ with tf.name_scope('loss'):
 tf.summary.scalar('loss', cross_entropy)
 
 with tf.name_scope('training'):
-    optimizer = tf.train.AdamOptimizer(learning_rate)
-    gradients, variables = zip(*optimizer.compute_gradients(cross_entropy))
-    gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
+    # decay learning rate..
+    learning_rate = tf.convert_to_tensor(initital_learning_rate, dtype=tf.float32)
+    global_step = tf.placeholder(tf.float32)
+    decay_steps = tf.convert_to_tensor(decay_steps, dtype=tf.float32)
+    ending_learning_rate = tf.convert_to_tensor(ending_learning_rate, dtype=tf.float32)
+    power = tf.convert_to_tensor(power, dtype=tf.float32)
+    global_step = tf.minimum(global_step, decay_steps)
 
+    decayed_rate = (learning_rate - ending_learning_rate) * \
+                   tf.pow((1 - global_step / decay_steps), power) + \
+                   ending_learning_rate
+
+    # get optimizer and gradients
+    optimizer = tf.train.MomentumOptimizer(decayed_rate, momentum=momentum)
+    gradients, variables = zip(*optimizer.compute_gradients(cross_entropy))
+
+    # clip gradients to prevent from exploding
+    gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
     gradients = [tf.where(tf.is_nan(grad), tf.zeros_like(grad), grad) if grad is not None
                  else grad for grad in gradients]
+
     train_step = optimizer.apply_gradients(zip(gradients, variables))
 
 with tf.name_scope('correct_predictions'):
@@ -320,7 +342,7 @@ with tf.Session() as sess:
     test_log_dir = os.path.join(log_dir, 'test')
     train_log_dir = os.path.join(log_dir, 'train')
     train_writer = tf.summary.FileWriter(train_log_dir, sess.graph)
-    test_writer = tf.summary.FileWriter(test_log_dir, sess.graph)
+    #test_writer = tf.summary.FileWriter(test_log_dir, sess.graph)
 
     sess.run(tf.local_variables_initializer())
     sess.run(tf.global_variables_initializer())
@@ -334,20 +356,20 @@ with tf.Session() as sess:
             # run test against validation dataset
             val_correct = 0.
             print('\ngetting validation accuracy...')
-            for _ in range(3):
+            for _ in range(5):
                 val_batch, val_lbl_keys = sess.run((val_img_batch, val_label_batch))
                 val_lbls = [val_labels[l.decode()] for l in val_lbl_keys]
                 val_correct += sess.run(num_correct, feed_dict={inp_placeholder: val_batch,
                                                                training_placeholder: False,
                                                                ground_truth_placeholder: val_lbls})
-            print("%d/%d correct on validation" % (val_correct, test_size))
+            print("%d/%d correct on validation" % (val_correct, val_batch_size*3))
             #test_writer.add_summary(summary, global_step=(e*num_val_batches + vb))
-            print("training accuracy: %g" % (val_correct / test_size))
+            print("training accuracy: %g" % (val_correct / (val_batch_size*3)))
 
             if e % 500 == 0 and e != 0:
                 # save checkpoint
                 print("Saving checkpoint...")
-                save_path = os.path.join(save_dir, "conv6_208_%g.ckpt" % val_correct)
+                save_path = os.path.join(save_dir, "conv6_s32_e512_208_%g.ckpt" % val_correct)
                 saver.save(sess, save_path)
 
         # run training step
@@ -355,13 +377,14 @@ with tf.Session() as sess:
         train_lbls = [train_labels[l.decode()] for l in train_lbl_keys]
         summary, _ = sess.run([merged, train_step], feed_dict={inp_placeholder: train_batch,
                                                                training_placeholder: True,
-                                                               ground_truth_placeholder: train_lbls})
+                                                               ground_truth_placeholder: train_lbls,
+                                                               global_step: e})
         print("\r%d/%d training steps.." % (e+1, epochs), end='')
         train_writer.add_summary(summary, global_step=e)
 
     # run against test dataset
     print("running test accuracy..")
-    num_test_batches = int(len(test_data) / test_size)
+    num_test_batches = int(len(test_data) / test_batch_size)
     test_correct = 0
     for _ in range(num_test_batches):
         test_batch, test_lbl_keys = sess.run((test_img_batch, test_label_batch))
@@ -370,12 +393,12 @@ with tf.Session() as sess:
             feed_dict={inp_placeholder: test_batch,
                        training_placeholder: False,
                        ground_truth_placeholder: test_lbls})
-    test_accuracy = test_correct / float(num_test_batches*test_size)
+    test_accuracy = test_correct / float(num_test_batches*test_batch_size)
     print("test accuracy: %g" % test_accuracy)
 
     # save end
     print("Saving final train run..")
-    save_path = os.path.join(save_dir, "conv6_208_%g.ckpt" % test_accuracy)
+    save_path = os.path.join(save_dir, "conv6_s32_e512_208_%g.ckpt" % test_accuracy)
     saver.save(sess, save_path)
 
     coord.request_stop()

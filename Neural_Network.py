@@ -67,7 +67,7 @@ class Neural_Network:
             batch_norm2 = op.batch_normalize(relu2, self.w_bnb2, self.w_bng2, self.running_mean_var_bn2, training=training)
             pool2 = op.pool(batch_norm2[0], p_h1, p_w1, stride1)
 
-        op.add_layer_summaries('2', conv2, relu2, batch_norm2[0], pool=pool2)
+        #op.add_layer_summaries('2', conv2, relu2, batch_norm2[0], pool=pool2)
 
         '''   LAYER 3   '''
         with tf.name_scope('layer_3'):
@@ -77,7 +77,7 @@ class Neural_Network:
             relu3 = op.relu(conv3)
             batch_norm3 = op.batch_normalize(relu3, self.w_bnb3, self.w_bng3, self.running_mean_var_bn3, training=training)
 
-        op.add_layer_summaries('3', conv3, relu3, batch_norm3[0])
+        #op.add_layer_summaries('3', conv3, relu3, batch_norm3[0])
 
         '''   LAYER 4   '''
         with tf.name_scope('layer_4'):
@@ -88,7 +88,7 @@ class Neural_Network:
             batch_norm4 = op.batch_normalize(relu4, self.w_bnb4, self.w_bng4, self.running_mean_var_bn4, training=training)
             pool4 = op.pool(batch_norm4[0], p_h2, p_w2, stride2)
 
-        op.add_layer_summaries('4', conv4, relu4, batch_norm4[0], pool=pool4)
+        #op.add_layer_summaries('4', conv4, relu4, batch_norm4[0], pool=pool4)
 
         '''   LAYER 5   '''
         with tf.name_scope('layer_5'):
@@ -99,7 +99,7 @@ class Neural_Network:
             batch_norm5 = op.batch_normalize(relu5, self.w_bnb5, self.w_bng5, self.running_mean_var_bn5, training=training)
             pool5 = op.pool(batch_norm5[0], p_h3, p_w3, stride3)
 
-        op.add_layer_summaries('5', conv5, relu5, batch_norm5[0], pool=pool5)
+        #op.add_layer_summaries('5', conv5, relu5, batch_norm5[0], pool=pool5)
 
         '''   LAYER 6   '''
         with tf.name_scope('layer_6'):
@@ -277,10 +277,10 @@ class Neural_Network:
             self.running_mean_var_bn2 = tf.Variable([tf.zeros(n_fm2), tf.ones(n_fm2)],
                                                     trainable=False, name="running_bn2")
 
-        op.add_weight_summaries('conv_2_weights', self.w_conv2)
-        op.add_weight_summaries('beta_2', self.w_bnb2)
-        op.add_weight_summaries('gamma_2', self.w_bng2)
-        op.add_weight_summaries('running_mean_var_2', self.running_mean_var_bn2)
+        #op.add_weight_summaries('conv_2_weights', self.w_conv2)
+        #op.add_weight_summaries('beta_2', self.w_bnb2)
+        #op.add_weight_summaries('gamma_2', self.w_bng2)
+        #op.add_weight_summaries('running_mean_var_2', self.running_mean_var_bn2)
 
         with tf.name_scope('layer_3_weights'):
             n_fm3, f_h, f_w, _, _ = infos[3]
@@ -290,10 +290,10 @@ class Neural_Network:
             self.running_mean_var_bn3 = tf.Variable([tf.zeros(n_fm3), tf.ones(n_fm3)],
                                                     trainable=False, name="running_bn3")
 
-        op.add_weight_summaries('conv_3_weights', self.w_conv3)
-        op.add_weight_summaries('beta_3', self.w_bnb3)
-        op.add_weight_summaries('gamma_3', self.w_bng3)
-        op.add_weight_summaries('running_mean_var_3', self.running_mean_var_bn3)
+        #op.add_weight_summaries('conv_3_weights', self.w_conv3)
+        #op.add_weight_summaries('beta_3', self.w_bnb3)
+        #op.add_weight_summaries('gamma_3', self.w_bng3)
+        #op.add_weight_summaries('running_mean_var_3', self.running_mean_var_bn3)
 
         with tf.name_scope('layer_4_weights'):
             n_fm4, f_h, f_w, _, _ = infos[4]
@@ -303,10 +303,10 @@ class Neural_Network:
             self.running_mean_var_bn4 = tf.Variable([tf.zeros(n_fm4), tf.ones(n_fm4)],
                                                     trainable=False, name="running_bn4")
 
-        op.add_weight_summaries('conv_4_weights', self.w_conv4)
-        op.add_weight_summaries('beta_4', self.w_bnb4)
-        op.add_weight_summaries('gamma_4', self.w_bng4)
-        op.add_weight_summaries('running_mean_var_4', self.running_mean_var_bn4)
+        #op.add_weight_summaries('conv_4_weights', self.w_conv4)
+        #op.add_weight_summaries('beta_4', self.w_bnb4)
+        #op.add_weight_summaries('gamma_4', self.w_bng4)
+        #op.add_weight_summaries('running_mean_var_4', self.running_mean_var_bn4)
 
         with tf.name_scope('layer_5_weights'):
             n_fm5, f_h, f_w, _, _ = infos[6]
@@ -316,10 +316,10 @@ class Neural_Network:
             self.running_mean_var_bn5 = tf.Variable([tf.zeros(n_fm5), tf.ones(n_fm5)],
                                                     trainable=False, name="running_bn5")
 
-        op.add_weight_summaries('conv_5_weights', self.w_conv5)
-        op.add_weight_summaries('beta_5', self.w_bnb5)
-        op.add_weight_summaries('gamma_5', self.w_bng5)
-        op.add_weight_summaries('running_mean_var_5', self.running_mean_var_bn5)
+        #op.add_weight_summaries('conv_5_weights', self.w_conv5)
+        #op.add_weight_summaries('beta_5', self.w_bnb5)
+        #op.add_weight_summaries('gamma_5', self.w_bng5)
+        #op.add_weight_summaries('running_mean_var_5', self.running_mean_var_bn5)
 
         with tf.name_scope('layer_6_weights'):
             n_fm6, f_h, f_w, _, _ = infos[8]
@@ -357,7 +357,7 @@ class Neural_Network:
         self.w_conv10 = op.initialize_conv_weights((n_fm10, n_fm9, f_h, f_w), 'w_conv10')
         """
         with tf.name_scope('full_con_weights'):
-            fc_in = 13 * 13 * 64
+            fc_in = 13 * 13 * 512
             self.w_full = op.initialize_2d_weights((fc_in, 20), 'w_full')
         op.add_weight_summaries('full_conn', self.w_full)
 
