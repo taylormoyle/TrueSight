@@ -280,7 +280,7 @@ class Neural_Network:
         op.add_weight_summaries('conv_2_weights', self.w_conv2)
         op.add_weight_summaries('beta_2', self.w_bnb2)
         op.add_weight_summaries('gamma_2', self.w_bng2)
-        op.add_weight_summaries('runnning_mean_var_2', self.running_mean_var_bn2)
+        op.add_weight_summaries('running_mean_var_2', self.running_mean_var_bn2)
 
         with tf.name_scope('layer_3_weights'):
             n_fm3, f_h, f_w, _, _ = infos[3]
@@ -332,7 +332,7 @@ class Neural_Network:
         op.add_weight_summaries('conv_6_weights', self.w_conv6)
         op.add_weight_summaries('beta_6', self.w_bnb6)
         op.add_weight_summaries('gamma_6', self.w_bng6)
-        op.add_weight_summaries('running__mean_var_6', self.running_mean_var_bn6)
+        op.add_weight_summaries('running_mean_var_6', self.running_mean_var_bn6)
 
         """
         n_fm7, f_h, f_w, _, _ = infos[10]

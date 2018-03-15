@@ -23,11 +23,11 @@ def prep_data(img_dir, xml_dir, test_percent=10, validation_percent=10):
     labels = {}
     img_path = os.path.join(img_dir, "*")
     img_files = glob.glob(img_path)
-    sorted(img_files)
+    img_files.sort()
 
     xml_path = os.path.join(xml_dir, "*")
     xml_files = glob.glob(xml_path)
-    sorted(xml_files)
+    xml_files.sort()
 
     for f, x in zip(img_files, xml_files):
         _, name = os.path.split(f)
@@ -127,23 +127,24 @@ def prep_face_data(train_fn, validation_fn, data_directory):
 
 
 # Loads each file as np RGB array, and returns an array of tuples [(image, label)]
-def load_img(filename_queue):
+def load_img(filename_queue, training):
     reader = tf.WholeFileReader()
     key, value = reader.read(filename_queue)
 
     image = tf.image.decode_jpeg(value, channels=3)
     image = resize_img(image)
-    image = process_data(image)
+    if training:
+        image = process_data(image)
     image = tf.transpose(image, perm=[2, 0, 1])
     return image, key
 
 
-def load_data(filenames, batch_size, num_epochs):
+def load_data(filenames, batch_size, num_epochs, training=True):
     filename_queue = tf.train.string_input_producer(
         filenames, num_epochs=num_epochs, shuffle=True)
-    image, label = load_img(filename_queue)
-    min_after_dequeue = 1000
-    capacity = min_after_dequeue + 3 * batch_size
+    image, label = load_img(filename_queue, training)
+    min_after_dequeue = 100 if training else 0
+    capacity = (min_after_dequeue + 3 * batch_size) if training else batch_size
     image_batch, label_batch = tf.train.shuffle_batch(
         [image, label], batch_size=batch_size, capacity=capacity,
         min_after_dequeue=min_after_dequeue
@@ -264,49 +265,12 @@ classes = ['person', 'dog', 'aeroplane', 'bus', 'bird', 'boat', 'car', 'bottle',
            'cat', 'horse', 'diningtable', 'cow', 'train', 'motorbike', 'bicycle',
            'sheep', 'tvmonitor', 'chair', 'sofa', 'pottedplant']
 
-"""
-net = nn.Neural_Network("facial_recognition", infos, hypers, training=True)
-weights = net.init_facial_rec_weights(infos)
-learning_rate = 0.001
-
-data, lbls = prep_data(img_dir, xml_dir)
-data['training'], labels = filter_data(lbls, classes)
-for e in range(epoch):
-    # shuffle data
-    dataset = data['training']
-    rand.shuffle(dataset)
-    num_batches = int(len(dataset) / batch_size)
-    for b in range(num_batches):
-        # load batch
-        imgs = load_data(dataset, batch_size, b)
-
-        # process batch
-        # implement later
-
-        # forward prop
-        predictions, cache = net.forward_prop(infos, imgs['images'], weights, training=True)
-
-        # back prop
-        grads = net.backward_prop(cache, predictions, imgs['labels'], weights, infos)
-
-        if b % 5 == 0:
-            rel_err = grad_check(net, imgs['images'], imgs['labels'], weights, grads, infos)
-            for i in rel_err:
-                print(e, b, i, 'gradient errors: ', rel_err[i])
-
-        weights = net.update_weights(weights, grads, learning_rate, batch_size)
-    # check validation accuracy
-
-# check test accuracy
-
-print(t.time() - s)
-
-"""
 '''    TENSORFLOW TRAINGING SCRIPT   '''
 
-epochs = 25
+epochs = 1000
 batch_size = 24
-learning_rate = 1e-3
+learning_rate = 1e-5
+test_size = 500
 
 dataset, labels = prep_data(img_dir, xml_dir)
 train_data, train_labels = filter_data(dataset['training'], labels, classes)
@@ -314,8 +278,8 @@ val_data, val_labels = filter_data(dataset['validation'], labels, classes)
 test_data, test_labels = filter_data(dataset['test'], labels, classes)
 
 train_img_batch, train_label_batch = load_data(train_data, batch_size, epochs)
-val_img_batch, val_label_batch = load_data(val_data, batch_size, None)
-test_img_batch, test_label_batch = load_data(test_data, batch_size, None)
+val_img_batch, val_label_batch = load_data(val_data, test_size, None, training=False)
+test_img_batch, test_label_batch = load_data(test_data, test_size, None, training=False)
 
 net = nn.Neural_Network("facial_recognition", infos, hypers)
 
@@ -363,44 +327,39 @@ with tf.Session() as sess:
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(coord=coord)
 
-    num_train_batches = int(len(train_data) / batch_size)
-    print(num_train_batches)
+    #num_train_batches = int(len(train_data) / batch_size)
+    #print(num_train_batches)
     for e in range(epochs):
-        print("epoch: ", e)
-        print('getting validation accuracy...')
-        num_val_batches = int(len(val_data) / batch_size)
-        train_correct = 0.
-        for vb in range(num_val_batches):
+        if e % 100 == 0:
+            # run test against validation dataset
+            print('\ngetting validation accuracy...')
             val_batch, val_lbl_keys = sess.run((val_img_batch, val_label_batch))
             val_lbls = [val_labels[l.decode()] for l in val_lbl_keys]
-            summary, correct = sess.run([merged, num_correct],
-                feed_dict={inp_placeholder: val_batch,
-                           training_placeholder: False,
-                           ground_truth_placeholder: val_lbls})
-            train_correct += correct
-            print("\r%d/%d. correct on validation: %g" % (vb+1, num_val_batches, train_correct), end='')
-            test_writer.add_summary(summary, global_step=(e*num_val_batches + vb))
-        train_accuracy = train_correct / float(num_val_batches*batch_size)
-        print("\rtraining accuracy: %g" % train_accuracy)
+            val_correct = sess.run(num_correct, feed_dict={inp_placeholder: val_batch,
+                                                           training_placeholder: False,
+                                                           ground_truth_placeholder: val_lbls})
+            print("%d/%d correct on validation" % (val_correct, test_size))
+            #test_writer.add_summary(summary, global_step=(e*num_val_batches + vb))
+            print("training accuracy: %g" % (val_correct / test_size))
 
-        for b in range(num_train_batches):
-            train_batch, train_lbl_keys = sess.run((train_img_batch, train_label_batch))
-            train_lbls = [train_labels[l.decode()] for l in train_lbl_keys]
-            summary, _ = sess.run([merged, train_step], feed_dict={inp_placeholder: train_batch,
-                                      training_placeholder: True,
-                                      ground_truth_placeholder: train_lbls})
-            print("\r%d/%d training batch.." % (b+1, num_train_batches), end='')
-            train_writer.add_summary(summary, global_step=(e*num_train_batches + b))
+            if e % 500 == 0 and e != 0:
+                # save checkpoint
+                print("Saving checkpoint...")
+                save_path = os.path.join(save_dir, "conv6_208_%g.ckpt" % val_correct)
+                saver.save(sess, save_path)
 
-        print("")
-        if e % 5 == 0 and e != 0:
-            # save checkpoint
-            print("Saving checkpoint...")
-            save_path = os.path.join(save_dir, "conv6_208_%g.ckpt" % train_accuracy)
-            saver.save(sess, save_path)
+        # run training step
+        train_batch, train_lbl_keys = sess.run((train_img_batch, train_label_batch))
+        train_lbls = [train_labels[l.decode()] for l in train_lbl_keys]
+        summary, _ = sess.run([merged, train_step], feed_dict={inp_placeholder: train_batch,
+                                                               training_placeholder: True,
+                                                               ground_truth_placeholder: train_lbls})
+        print("\r%d/%d training steps.." % (e+1, epochs), end='')
+        train_writer.add_summary(summary, global_step=e)
 
+    # run against test dataset
     print("running test accuracy..")
-    num_test_batches = int(len(test_data) / batch_size / 2)
+    num_test_batches = int(len(test_data) / test_size)
     test_correct = 0
     for _ in range(num_test_batches):
         test_batch, test_lbl_keys = sess.run((test_img_batch, test_label_batch))
@@ -409,7 +368,7 @@ with tf.Session() as sess:
             feed_dict={inp_placeholder: test_batch,
                        training_placeholder: False,
                        ground_truth_placeholder: test_lbls})
-    test_accuracy = test_correct / float(num_train_batches*batch_size)
+    test_accuracy = test_correct / float(num_test_batches*test_size)
     print("test accuracy: %g" % test_accuracy)
 
     # save end

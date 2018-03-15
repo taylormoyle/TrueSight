@@ -433,4 +433,4 @@ def add_weight_summaries(name, weights):
         tf.summary.scalar('stddev', stddev)
         tf.summary.scalar('max', tf.reduce_max(weights))
         tf.summary.scalar('min', tf.reduce_min(weights))
-        tf.summary.histogram('histogram', weights)
+        #tf.summary.histogram('histogram', weights)
