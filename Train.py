@@ -143,7 +143,7 @@ def load_data(filenames, batch_size, num_epochs, training=True):
     filename_queue = tf.train.string_input_producer(
         filenames, num_epochs=num_epochs, shuffle=True)
     image, label = load_img(filename_queue, training)
-    min_after_dequeue = 100 if training else 0
+    min_after_dequeue = 100 
     capacity = (min_after_dequeue + 3 * batch_size) if training else batch_size
     image_batch, label_batch = tf.train.shuffle_batch(
         [image, label], batch_size=batch_size, capacity=capacity,
@@ -270,7 +270,7 @@ classes = ['person', 'dog', 'aeroplane', 'bus', 'bird', 'boat', 'car', 'bottle',
 epochs = 1000
 batch_size = 24
 learning_rate = 1e-5
-test_size = 500
+test_size = 300
 
 dataset, labels = prep_data(img_dir, xml_dir)
 train_data, train_labels = filter_data(dataset['training'], labels, classes)
@@ -332,12 +332,14 @@ with tf.Session() as sess:
     for e in range(epochs):
         if e % 100 == 0:
             # run test against validation dataset
+            val_correct = 0.
             print('\ngetting validation accuracy...')
-            val_batch, val_lbl_keys = sess.run((val_img_batch, val_label_batch))
-            val_lbls = [val_labels[l.decode()] for l in val_lbl_keys]
-            val_correct = sess.run(num_correct, feed_dict={inp_placeholder: val_batch,
-                                                           training_placeholder: False,
-                                                           ground_truth_placeholder: val_lbls})
+            for _ in range(3):
+                val_batch, val_lbl_keys = sess.run((val_img_batch, val_label_batch))
+                val_lbls = [val_labels[l.decode()] for l in val_lbl_keys]
+                val_correct += sess.run(num_correct, feed_dict={inp_placeholder: val_batch,
+                                                               training_placeholder: False,
+                                                               ground_truth_placeholder: val_lbls})
             print("%d/%d correct on validation" % (val_correct, test_size))
             #test_writer.add_summary(summary, global_step=(e*num_val_batches + vb))
             print("training accuracy: %g" % (val_correct / test_size))
