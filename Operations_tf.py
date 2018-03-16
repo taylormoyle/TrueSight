@@ -63,8 +63,8 @@ def batch_normalize(inp, beta, gamma, running_mean_var, training=False, decay=0.
     def is_training():
         mean = (1. / tf.cast(M, dtype=tf.float32)) * tf.reduce_sum(x, axis=0)
         xmu = x - mean
-        variance = (1. / tf.cast(M, dtype=tf.float32)) * tf.reduce_sum(xmu * xmu, axis=0) + epsilon
-        inv_std = 1. / tf.sqrt(variance)
+        variance = (1. / tf.cast(M, dtype=tf.float32)) * tf.reduce_sum(xmu * xmu, axis=0)
+        inv_std = 1. / tf.sqrt(variance+epsilon)
         x_hat = xmu * inv_std
 
         mean_var = tf.stack((mean, variance), axis=0)
@@ -75,7 +75,7 @@ def batch_normalize(inp, beta, gamma, running_mean_var, training=False, decay=0.
 
     def not_training():
         xmu = x - running_mean_var[0]
-        inv_std = tf.sqrt(running_mean_var[1])
+        inv_std = tf.sqrt(running_mean_var[1]+epsilon)
         x_hat = xmu * inv_std
         return xmu, inv_std, x_hat, running_mean_var
 
@@ -99,9 +99,9 @@ def full_conn(inp, weights):
 ******************************************"""
 
 def relu(inp):
-    #zeros = tf.zeros_like(inp)
-    #return tf.where(tf.greater_equal(inp, zeros), inp, zeros)
-    return leaky_relu(inp)
+    zeros = tf.zeros_like(inp)
+    return tf.where(tf.greater_equal(inp, zeros), inp, zeros)
+    #return leaky_relu(inp)
 
 
 def leaky_relu(inp, alpha=0.01):

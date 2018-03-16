@@ -162,6 +162,17 @@ def prep_all_face_data(img_dir, xml_dir, test_percent=10, validation_percent=10)
 
     return dataset, labels
 
+def prep_classification_data(data_dir):
+    datasets = {'train': [], 'test': [], 'validation': []}
+    path = os.path.join(data_dir, '*', '*.jpg')
+    images = glob.glob(path)
+    random.shuffle(images)
+
+    datasets['train'] = images[:6100]
+    datasets['test'] = images[6100:6850]
+    datasets['validaion'] = images[6850:7600]
+    return datasets
+
 
 def resize_img(img):
     img.thumbnail([RES, RES], Image.ANTIALIAS)
@@ -206,13 +217,13 @@ def process_data(data, labels, data_set, save_dir):
         image = Image.fromarray(img)
 
         img_folder, filename = os.path.split(i)
-        _, img_folder = os.path.split(img_folder)
+        #_, img_folder = os.path.split(img_folder)
 
-        img_save_dir = os.path.join(save_dir, img_folder)
-        if not os.path.exists(img_save_dir):
-            os.mkdir(img_save_dir)
+        #img_save_dir = os.path.join(save_dir, img_folder)
+        #if not os.path.exists(img_save_dir):
+        #    os.mkdir(img_save_dir)
 
-        file_pathname = os.path.join(img_save_dir, filename)
+        file_pathname = os.path.join(save_dir, filename)
         image.save(file_pathname)
 
         '''
@@ -267,8 +278,10 @@ def rescale_labels(x, y, box_w, box_h, img_w, img_h, pad_top, pad_left):
 #process_data(dataset['test'], valtest_labels, 'test', 'data\\classification\\test\\faces')
 #process_data(dataset['validation'], valtest_labels, 'validation', 'data\\classification\\validation\\faces')
 
-dataset, _ = prep_all_face_data('data\\VOC2012\\JPEGImages', 'data\\VOC2012\\Annotations')
-process_data(dataset['train'], None, 'train', 'data\\classification\\train\\nofaces')
-process_data(dataset['test'], None, 'test', 'data\\classification\\test\\nofaces')
-process_data(dataset['validation'], None, 'validation', 'data\\classification\\validation\\nofaces')
+#dataset, _ = prep_all_face_data('data\\VOC2012\\JPEGImages', 'data\\VOC2012\\Annotations')
+dataset = prep_classification_data('data\\lfw')
+
+process_data(dataset['train'], None, 'train', 'data\\classification\\train\\faces')
+process_data(dataset['test'], None, 'test', 'data\\classification\\test\\faces')
+process_data(dataset['validation'], None, 'validation', 'data\\classification\\validation\\faces')
 

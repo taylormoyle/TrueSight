@@ -51,8 +51,8 @@ def batch_normalize(inp, beta, gamma, running_mean_var, training=False, epsilon=
     if training:
         mean = (1. / M) * np.sum(x, axis=0)
         xmu = x - mean
-        variance = (1. / M) * np.sum(xmu * xmu, axis=0) + epsilon
-        inv_std = 1. / np.sqrt(variance)
+        variance = (1. / M) * np.sum(xmu * xmu, axis=0)
+        inv_std = 1. / np.sqrt(variance+epsilon)
         x_hat = xmu * inv_std
 
         if running_mean is None:
@@ -63,7 +63,7 @@ def batch_normalize(inp, beta, gamma, running_mean_var, training=False, epsilon=
             running_variance = 0.9 * running_variance + 0.1 * variance
     else:
         xmu = x - running_mean
-        inv_std = np.sqrt(running_variance)
+        inv_std = np.sqrt(running_variance+epsilon)
         x_hat = xmu * inv_std
 
     norm_inp = gamma * x_hat + beta
