@@ -152,7 +152,7 @@ def load_data(filenames, batch_size, num_epochs, training=True):
     return image_batch, label_batch
 
 
-# Resize image to a 416 x 416 resolution
+# Resize image to a 208 x 208 resolution
 def resize_img(img):
     h, w, _ = img.get_shape()
     new_h = 0
@@ -267,7 +267,7 @@ classes = ['person', 'dog', 'aeroplane', 'bus', 'bird', 'boat', 'car', 'bottle',
 
 '''    TENSORFLOW TRAINGING SCRIPT   '''
 
-epochs = 1000
+epochs = 10000
 batch_size = 32
 initital_learning_rate = 0.1
 ending_learning_rate = 1e-5
