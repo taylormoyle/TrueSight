@@ -42,7 +42,7 @@ class Neural_Network:
                                              self.running_mean_var_bn1, training=training)
             pool1 = op.pool(batch_norm1[0], p_h, p_w, stride)
 
-        op.add_layer_summaries('1', conv1, relu1, batch_norm1[0], pool=pool1)
+        #op.add_layer_summaries('1', conv1, relu1, batch_norm1[0], pool=pool1)
 
         '''   LAYER 2   '''
         n_fm, f_h, f_w, _, pad = architecture['conv2']
@@ -72,45 +72,67 @@ class Neural_Network:
 
         '''   LAYER 4   '''
         n_fm, f_h, f_w, _, pad = architecture['conv4']
-        _, p_h, p_w, stride, _ = architecture['pool4']
         with tf.name_scope('layer_4'):
             w = tf.transpose(self.w_conv4, perm=[2, 3, 1, 0])
             conv4 = tf.nn.conv2d(pool3, w, strides=[1, 1, 1, 1], padding='SAME', data_format="NCHW")
             relu4 = op.relu(conv4)
             batch_norm4 = op.batch_normalize(relu4, self.w_bnb4, self.w_bng4,
                                              self.running_mean_var_bn4, training=training)
-            pool4 = op.pool(batch_norm4[0], p_h, p_w, stride)
 
-        #op.add_layer_summaries('4', conv4, relu4, batch_norm4[0], pool=pool4)
+        # op.add_layer_summaries('4', conv4, relu4, batch_norm4[0])
 
         '''   LAYER 5   '''
         n_fm, f_h, f_w, _, pad = architecture['conv5']
         with tf.name_scope('layer_5'):
             w = tf.transpose(self.w_conv5, perm=[2, 3, 1, 0])
-            conv5 = tf.nn.conv2d(pool4, w, strides=[1, 1, 1, 1], padding='SAME', data_format="NCHW")
+            conv5 = tf.nn.conv2d(batch_norm4[0], w, strides=[1, 1, 1, 1], padding='SAME', data_format="NCHW")
             relu5 = op.relu(conv5)
             batch_norm5 = op.batch_normalize(relu5, self.w_bnb5, self.w_bng5,
                                              self.running_mean_var_bn5, training=training)
 
-        #op.add_layer_summaries('5', conv5, relu5, batch_norm5[0], pool=pool5)
-
+        # op.add_layer_summaries('5', conv5, relu5, batch_norm5[0], pool=pool5)
 
         '''   LAYER 6   '''
         n_fm, f_h, f_w, _, pad = architecture['conv6']
+        _, p_h, p_w, stride, _ = architecture['pool6']
         with tf.name_scope('layer_6'):
             w = tf.transpose(self.w_conv6, perm=[2, 3, 1, 0])
             conv6 = tf.nn.conv2d(batch_norm5[0], w, strides=[1, 1, 1, 1], padding='SAME', data_format="NCHW")
             relu6 = op.relu(conv6)
             batch_norm6 = op.batch_normalize(relu6, self.w_bnb6, self.w_bng6,
                                              self.running_mean_var_bn6, training=training)
+            pool6 = op.pool(batch_norm6[0], p_h, p_w, stride)
 
-        op.add_layer_summaries('6', conv6, relu6, batch_norm6[0])
+        #op.add_layer_summaries('6', conv6, relu6, batch_norm6[0], pool=pool6)
+
+        '''   LAYER 7   '''
+        n_fm, f_h, f_w, _, pad = architecture['conv7']
+        with tf.name_scope('layer_7'):
+            w = tf.transpose(self.w_conv7, perm=[2, 3, 1, 0])
+            conv7 = tf.nn.conv2d(pool6, w, strides=[1, 1, 1, 1], padding='SAME', data_format="NCHW")
+            relu7 = op.relu(conv7)
+            batch_norm7 = op.batch_normalize(relu7, self.w_bnb7, self.w_bng7,
+                                             self.running_mean_var_bn7, training=training)
+
+        #op.add_layer_summaries('7', conv7, relu7, batch_norm7[0], pool=pool7)
+
+
+        '''   LAYER 8   '''
+        n_fm, f_h, f_w, _, pad = architecture['conv8']
+        with tf.name_scope('layer_8'):
+            w = tf.transpose(self.w_conv8, perm=[2, 3, 1, 0])
+            conv8 = tf.nn.conv2d(batch_norm7[0], w, strides=[1, 1, 1, 1], padding='SAME', data_format="NCHW")
+            relu8 = op.relu(conv8)
+            batch_norm8 = op.batch_normalize(relu8, self.w_bnb8, self.w_bng8,
+                                             self.running_mean_var_bn8, training=training)
+
+        #op.add_layer_summaries('8', conv8, relu8, batch_norm8[0])
 
         '''   FULLY CONNECTED LAYER   '''
         with tf.name_scope('full_conn_layer'):
-            N, D = tf.shape(batch_norm6[0])[0], tf.shape(batch_norm6[0])[1]
-            H, W = tf.shape(batch_norm6[0])[2], tf.shape(batch_norm6[0])[3]
-            flatten = tf.reshape(batch_norm6[0], [-1, D * H * W])
+            N, D = tf.shape(batch_norm8[0])[0], tf.shape(batch_norm8[0])[1]
+            H, W = tf.shape(batch_norm8[0])[2], tf.shape(batch_norm8[0])[3]
+            flatten = tf.reshape(batch_norm8[0], [-1, D * H * W])
             full_conn = op.full_conn(flatten, self.w_full)
         tf.summary.histogram('full_conn', full_conn)
         prediction = op.sigmoid(full_conn)
@@ -299,10 +321,36 @@ class Neural_Network:
             self.running_mean_var_bn6 = tf.Variable([tf.zeros(n_fm6), tf.ones(n_fm6)],
                                                     trainable=False, name="running_bn6")
 
-        op.add_weight_summaries('conv_6_weights', self.w_conv6)
-        op.add_weight_summaries('beta_6', self.w_bnb6)
-        op.add_weight_summaries('gamma_6', self.w_bng6)
-        op.add_weight_summaries('running_mean_var_6', self.running_mean_var_bn6)
+        #op.add_weight_summaries('conv_6_weights', self.w_conv6)
+        #op.add_weight_summaries('beta_6', self.w_bnb6)
+        #op.add_weight_summaries('gamma_6', self.w_bng6)
+        #op.add_weight_summaries('running_mean_var_6', self.running_mean_var_bn6)
+
+        with tf.name_scope('layer_7_weights'):
+            n_fm7, f_h, f_w, _, _ = architecture['conv7']
+            self.w_conv7 = op.initialize_conv_weights((n_fm7, n_fm6, f_h, f_w), 'w_conv7')
+            self.w_bnb7 = tf.Variable(tf.zeros([n_fm7]), name='w_bnb7')
+            self.w_bng7 = tf.Variable(tf.ones([n_fm7]), name='w_bng7')
+            self.running_mean_var_bn7 = tf.Variable([tf.zeros(n_fm7), tf.ones(n_fm7)],
+                                                    trainable=False, name="running_bn7")
+
+        #op.add_weight_summaries('conv_7_weights', self.w_conv7)
+        #op.add_weight_summaries('beta_7', self.w_bnb7)
+        #op.add_weight_summaries('gamma_7', self.w_bng7)
+        #op.add_weight_summaries('running_mean_var_7', self.running_mean_var_bn7)
+
+        with tf.name_scope('layer_8_weights'):
+            n_fm8, f_h, f_w, _, _ = architecture['conv8']
+            self.w_conv8 = op.initialize_conv_weights((n_fm8, n_fm7, f_h, f_w), 'w_conv8')
+            self.w_bnb8 = tf.Variable(tf.zeros([n_fm8]), name='w_bnb8')
+            self.w_bng8 = tf.Variable(tf.ones([n_fm8]), name='w_bng8')
+            self.running_mean_var_bn8 = tf.Variable([tf.zeros(n_fm8), tf.ones(n_fm8)],
+                                                    trainable=False, name="running_bn8")
+
+        op.add_weight_summaries('conv_8_weights', self.w_conv8)
+        op.add_weight_summaries('beta_8', self.w_bnb8)
+        op.add_weight_summaries('gamma_8', self.w_bng8)
+        op.add_weight_summaries('running_mean_var_8', self.running_mean_var_bn8)
 
         with tf.name_scope('full_con_weights'):
             fc_in, fc_out = architecture['full']

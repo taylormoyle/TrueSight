@@ -10,15 +10,15 @@ from glob import glob
 from tensorflow.python import debug as tf_debug
 
 RES = 208
-DELTA_HUE = 0.032
+DELTA_HUE = 0.2
 MAX_DELTA_SATURATION = 1.5
 MIN_DELTA_SATURATION = 0.5
+MAX_DELTA_BRIGHTNESS = 0.2
 
 
 def prep_classification_data(data_dir):
     data = {'train': [], 'test': [], 'validation': []}
     labels = {'train': {}, 'test': {}, 'validation': {}}
-    limit = 0
     for d in data:
         class_path = os.path.join(data_dir, d, '*')
         classes = glob(class_path)
@@ -26,19 +26,10 @@ def prep_classification_data(data_dir):
             _ , obj = os.path.split(c)
             search_path = os.path.join(c, '*')
             for f in glob(search_path):
-                if os.path.isdir(f):
-                    if not limit == 6000:
-                        path = os.path.join(f, '*.jpg')
-                        for ff in glob(path):
-                            data[d].append(ff)
-                            limit += 1
-                            label = [1] if obj == 'faces' else [0]
-                            labels[d][ff] = label
-                else:
-                    if '.jpg' in f:
-                        data[d].append(f)
-                        label = [1] if obj == 'faces' else [0]
-                        labels[d][f] = label
+                if '.jpg' in f:
+                    data[d].append(f)
+                    label = np.array([1,0]) if obj == 'faces' else np.array([0,1])
+                    labels[d][f] = label
         random.shuffle(data[d])
     return data, labels
 
@@ -117,8 +108,7 @@ def load_img(filename_queue, training):
     image = tf.image.decode_jpeg(value, channels=3)
     image.set_shape([RES, RES, 3])
     #image = resize_img(image)
-    if training:
-        image = process_data(image)
+    image = process_data(image)
     image = tf.transpose(image, perm=[2, 0, 1])
     return image, key
 
@@ -156,10 +146,30 @@ def resize_img(img):
 
     return img_resized
 
+def shift_image(image):
+    shift_x = tf.random_uniform([1], minval=-10, maxval=10, dtype=tf.int32)
+    shift_y = tf.random_uniform([1], minval=-10, maxval=10, dtype=tf.int32)
+
+    image_y_shifted = tf.cond(tf.greater_equal(shift_y, 0),
+                              lambda: tf.pad(image, [[shift_y, 0], [0, 0], [0, 0]], mode='CONSTANT'),
+                              lambda: tf.pad(image, [[0, shift_y * -1], [0, 0], [0, 0]], mode='CONSTANT'))
+
+    image_x_shifted = tf.cond(tf.greater_equal(shift_x, 0),
+                              lambda: tf.pad(image_y_shifted, [[0, 0], [shift_x, 0], [0, 0]], mode='CONSTANT'),
+                              lambda: tf.pad(image_y_shifted, [[0, 0], [0, shift_x * -1], [0, 0]], mode='CONSTANT'))
+
+    image_y_shifted = tf.cond(tf.greater_equal(shift_y, 0),
+                              lambda: tf.pad(image, [[shift_y, 0], [0, 0], [0, 0]], mode='CONSTANT'),
+                              lambda: tf.pad(image, [[0, shift_y * -1], [0, 0], [0, 0]], mode='CONSTANT'))
+    image_y_shifted = tf.cond(tf.greater_equal(shift_y, 0),
+                              lambda: tf.pad(image, [[shift_y, 0], [0, 0], [0, 0]], mode='CONSTANT'),
+                              lambda: tf.pad(image, [[0, shift_y * -1], [0, 0], [0, 0]], mode='CONSTANT'))
+
 # Perform transformations, normalize images, return array of tuples [(norm_image, label)]
 def process_data(images):
     # Perform Transformations on all images to diversify dataset
-    image_huerized = tf.image.random_hue(images, DELTA_HUE)
+    image_brighterized = tf.image.random_brightness(images, MAX_DELTA_BRIGHTNESS)
+    image_huerized = tf.image.random_hue(image_brighterized, DELTA_HUE)
     image_saturized = tf.image.random_saturation(image_huerized, MIN_DELTA_SATURATION, MAX_DELTA_SATURATION)
     image_flipperized = tf.image.random_flip_left_right(image_saturized)
     return image_flipperized
@@ -210,10 +220,13 @@ def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
 architecture = {'conv1': [32, 3, 3, 1, 1], 'pool1': [0, 2, 2, 2, 0],    # output shape 104
                 'conv2': [64, 3, 3, 1, 1], 'pool2': [0, 2, 2, 2, 0],    # output shape 52
                 'conv3': [128, 3, 3, 1, 1], 'pool3': [0, 2, 2, 2, 0],    # output shape 26
-                'conv4': [256, 3, 3, 1, 1], 'pool4': [0, 2, 2, 2, 0],   # output shape 13
-                'conv5': [512, 3, 3, 1, 1],
-                'conv6': [512, 3, 3, 1, 1],
-                'full': [13*13*512, 1]}
+                'conv4': [256, 3, 3, 1, 1],
+                'conv5': [128, 1, 1, 1, 1],
+                'conv6': [256, 3, 3, 1, 1], 'pool6': [0, 2, 2, 2, 0],   # output shape 13
+                'conv7': [512, 3, 3, 1, 1],
+                'conv8': [512, 3, 3, 1, 1],
+                'full':  [13*13*512, 2]
+                }
 
 
 hypers = [7]
@@ -227,9 +240,9 @@ epochs = 500
 batch_size = 64
 initital_learning_rate = 0.001
 ending_learning_rate = 1e-8
-decay_steps = 100
+decay_steps = 50
 power = 4
-momentum = 0.5
+momentum = 0.0
 weight_decay = 0.0005
 epsilon = 1e-8
 val_batch_size = 50
@@ -268,16 +281,17 @@ with tf.name_scope('training'):
     decay_steps = tf.convert_to_tensor(decay_steps, dtype=tf.float32)
     ending_learning_rate = tf.convert_to_tensor(ending_learning_rate, dtype=tf.float32)
     power = tf.convert_to_tensor(power, dtype=tf.float32)
-    global_step = tf.minimum(global_step, decay_steps)
+    global_decay = tf.minimum(global_step, decay_steps)
 
     decayed_rate = (learning_rate - ending_learning_rate) * \
-                   tf.pow((1 - global_step / decay_steps), power) + \
+                   tf.pow((1 - global_decay / decay_steps), power) + \
                    ending_learning_rate
+    tf.summary.scalar('learning_rate', decayed_rate)
+    tf.summary.scalar('global_step', global_step)
+    tf.summary.scalar('global_decay', global_decay)
 
-    '''
     # get optimizer and gradients
-    optimizer = tf.train.MomentumOptimizer(decayed_rate, momentum=momentum)
-    train_step = optimizer.minimize(loss)
+    optimizer = tf.train.GradientDescentOptimizer(decayed_rate)
     
     gradients, variables = zip(*optimizer.compute_gradients(loss))
 
@@ -287,12 +301,12 @@ with tf.name_scope('training'):
                  else grad for grad in gradients]
 
     train_step = optimizer.apply_gradients(zip(gradients, variables))
-    '''
-    train_step = tf.train.AdadeltaOptimizer(initital_learning_rate).minimize(loss)
 
-with tf.name_scope('correct_predictions'):
-    #correct_prediction = tf.equal(tf.argmax(pred_placeholder, 1), tf.argmax(ground_truth_placeholder, 1))
-    correct_prediction = tf.equal(tf.round(pred_placeholder), ground_truth_placeholder)
+    #train_step = tf.train.AdadeltaOptimizer(initital_learning_rate).minimize(loss)
+
+with tf.name_scope('accuracy'):
+    correct_prediction = tf.equal(tf.argmax(pred_placeholder, 1), tf.argmax(ground_truth_placeholder, 1))
+    #correct_prediction = tf.equal(tf.round(pred_placeholder), ground_truth_placeholder)
     num_correct = tf.reduce_sum(tf.cast(correct_prediction, tf.float32))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 tf.summary.scalar('number_correct', num_correct)
@@ -323,20 +337,20 @@ with tf.Session() as sess:
             # run test against validation dataset
             val_correct = 0.
             print('\ngetting validation accuracy...')
-            for _ in range(int(1000/test_batch_size)):
+            for _ in range(int(4000/test_batch_size)):
                 val_batch, val_lbl_keys = sess.run((val_img_batch, val_label_batch))
                 val_lbls = [labels['validation'][l.decode()] for l in val_lbl_keys]
                 val_correct += sess.run(num_correct, feed_dict={inp_placeholder: val_batch,
                                                                training_placeholder: False,
                                                                ground_truth_placeholder: val_lbls})
-            print("%d/%d correct on validation" % (val_correct, val_batch_size*int(1000/test_batch_size)))
+            print("%d/%d correct on validation" % (val_correct, val_batch_size*int(4000/test_batch_size)))
             #test_writer.add_summary(summary, global_step=(e*num_val_batches + vb))
-            print("training accuracy: %g" % (val_correct / (val_batch_size*int(1000/test_batch_size))))
+            print("training accuracy: %g" % (val_correct / (val_batch_size*int(4000/test_batch_size))))
 
             if e % 500 == 0 and e != 0:
                 # save checkpoint
                 print("Saving checkpoint...")
-                save_path = os.path.join(save_dir, "conv6_s32_e512_208_%g.ckpt" % val_correct)
+                save_path = os.path.join(save_dir, "conv6_sigmoid_208_%g.ckpt" % val_correct)
                 saver.save(sess, save_path)
 
         # run training step
@@ -350,7 +364,7 @@ with tf.Session() as sess:
         train_writer.add_summary(summary, global_step=e)
 
     # run against test dataset
-    print("running test accuracy..")
+    print("\nrunning test accuracy..")
     num_test_batches = int(len(dataset['test']) / test_batch_size)
     test_correct = 0
     for _ in range(num_test_batches):
