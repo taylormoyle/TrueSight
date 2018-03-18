@@ -54,44 +54,35 @@ def convolve(inp, weights, stride=1, pad=0):
     return tf.transpose(output, perm=[3, 0, 1, 2])
 
 
-def batch_normalize(inp, beta, gamma, running_mean_var, training=False, decay=0.9, epsilon=1e-8):
+def batch_normalize(inp, beta, gamma, running_mean, running_var,
+                    training=False, decay=0.9, epsilon=1e-8):
     N, D, H, W = tf.shape(inp)[0], tf.shape(inp)[1], tf.shape(inp)[2], tf.shape(inp)[3]
 
-    M = N*H*W
-    x = tf.reshape(tf.transpose(inp, [0, 2, 3, 1]), [M, D])
-
     def is_training():
-        mean = (1. / tf.cast(M, dtype=tf.float32)) * tf.reduce_sum(x, axis=0)
-        xmu = x - mean
-        variance = (1. / tf.cast(M, dtype=tf.float32)) * tf.reduce_sum(xmu * xmu, axis=0)
-        inv_std = 1. / tf.sqrt(variance+epsilon)
-        x_hat = xmu * inv_std
+        mean, var = tf.nn.moments(inp, axes=[0, 2, 3], keep_dims=True)
 
-        mean_var = tf.stack((mean, variance), axis=0)
-        train_mean_var = tf.assign(running_mean_var,
-                                   decay * running_mean_var + (1-decay) * mean_var)
+        train_mean = tf.assign(running_mean,
+                               decay * running_mean + (1-decay) * mean)
+        train_var = tf.assign(running_var,
+                              decay * running_var + (1 - decay) * var)
 
-        return xmu, inv_std, x_hat, train_mean_var
+        return mean, var, train_mean, train_var
 
     def not_training():
-        xmu = x - running_mean_var[0]
-        inv_std = tf.sqrt(running_mean_var[1]+epsilon)
-        x_hat = xmu * inv_std
-        return xmu, inv_std, x_hat, running_mean_var
+        return running_mean, running_var, running_mean, running_var
 
-    xmu, inv_std, x_hat, running_mean_var = tf.cond(tf.equal(training, True),
+    mean, var, train_mean, train_var = tf.cond(tf.equal(training, True),
                                                     is_training, not_training)
 
-    with tf.control_dependencies([running_mean_var]):
-        x_hat = tf.transpose(tf.reshape(x_hat, [N, H, W, D]), [0, 3, 1, 2])
-        norm_inp = tf.reshape(gamma, [1, tf.shape(gamma)[0], 1, 1]) * x_hat + \
-                   tf.reshape(beta, [1, tf.shape(beta)[0], 1, 1])
+    with tf.control_dependencies([train_mean, train_var]):
+        norm_inp = gamma * (inp - mean) * (1. / tf.sqrt(var + epsilon)) + beta
+        xmu=inv_std=x_hat=0
         cache = (xmu, inv_std, x_hat, gamma)
-        return tf.reshape(norm_inp, [N, D, H, W]), cache, running_mean_var
+        return norm_inp, cache, train_mean, train_var
 
 
-def full_conn(inp, weights):
-    full_conn = tf.matmul(inp, weights)
+def full_conn(inp, weights, bias):
+    full_conn = tf.matmul(inp, weights) + bias
     return full_conn
 
 """******************************************
@@ -397,13 +388,13 @@ def initialize_conv_weights(shape, name):
     w_out = f
 
     std = 2 / (w_in + w_out)
-    weights = tf.truncated_normal(shape, stddev=std, name=name)
+    weights = tf.truncated_normal(shape, stddev=0.001, name=name)
     return tf.Variable(weights)
 
 def initialize_2d_weights(shape, name):
-    w_in, w_out = shape
-    std = 2 / (w_in + w_out)
-    weights = tf.truncated_normal(shape, stddev=std, name=name)
+    #w_in, w_out = shape
+    #std = 2 / (w_in + w_out)
+    weights = tf.truncated_normal(shape, stddev=0.001, name=name)
     return tf.Variable(weights)
 
 def update_weights(weights, gradients, learning_rate, batch_size):

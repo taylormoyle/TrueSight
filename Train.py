@@ -28,7 +28,7 @@ def prep_classification_data(data_dir):
             for f in glob(search_path):
                 if '.jpg' in f:
                     data[d].append(f)
-                    label = np.array([1,0]) if obj == 'faces' else np.array([0,1])
+                    label = np.array([1, 0]) if obj == 'faces' else np.array([0, 1])
                     labels[d][f] = label
         random.shuffle(data[d])
     return data, labels
@@ -150,21 +150,6 @@ def shift_image(image):
     shift_x = tf.random_uniform([1], minval=-10, maxval=10, dtype=tf.int32)
     shift_y = tf.random_uniform([1], minval=-10, maxval=10, dtype=tf.int32)
 
-    image_y_shifted = tf.cond(tf.greater_equal(shift_y, 0),
-                              lambda: tf.pad(image, [[shift_y, 0], [0, 0], [0, 0]], mode='CONSTANT'),
-                              lambda: tf.pad(image, [[0, shift_y * -1], [0, 0], [0, 0]], mode='CONSTANT'))
-
-    image_x_shifted = tf.cond(tf.greater_equal(shift_x, 0),
-                              lambda: tf.pad(image_y_shifted, [[0, 0], [shift_x, 0], [0, 0]], mode='CONSTANT'),
-                              lambda: tf.pad(image_y_shifted, [[0, 0], [0, shift_x * -1], [0, 0]], mode='CONSTANT'))
-
-    image_y_shifted = tf.cond(tf.greater_equal(shift_y, 0),
-                              lambda: tf.pad(image, [[shift_y, 0], [0, 0], [0, 0]], mode='CONSTANT'),
-                              lambda: tf.pad(image, [[0, shift_y * -1], [0, 0], [0, 0]], mode='CONSTANT'))
-    image_y_shifted = tf.cond(tf.greater_equal(shift_y, 0),
-                              lambda: tf.pad(image, [[shift_y, 0], [0, 0], [0, 0]], mode='CONSTANT'),
-                              lambda: tf.pad(image, [[0, shift_y * -1], [0, 0], [0, 0]], mode='CONSTANT'))
-
 # Perform transformations, normalize images, return array of tuples [(norm_image, label)]
 def process_data(images):
     # Perform Transformations on all images to diversify dataset
@@ -217,15 +202,12 @@ def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
 
 ''''     TRAINING SCRIPT     '''
 
-architecture = {'conv1': [32, 3, 3, 1, 1], 'pool1': [0, 2, 2, 2, 0],    # output shape 104
-                'conv2': [64, 3, 3, 1, 1], 'pool2': [0, 2, 2, 2, 0],    # output shape 52
-                'conv3': [128, 3, 3, 1, 1], 'pool3': [0, 2, 2, 2, 0],    # output shape 26
-                'conv4': [256, 3, 3, 1, 1],
-                'conv5': [128, 1, 1, 1, 1],
-                'conv6': [256, 3, 3, 1, 1], 'pool6': [0, 2, 2, 2, 0],   # output shape 13
-                'conv7': [512, 3, 3, 1, 1],
-                'conv8': [512, 3, 3, 1, 1],
-                'full':  [13*13*512, 2]
+architecture = {'conv1': [16, 3, 3, 1, 1], 'pool1': [0, 2, 2, 2, 0],    # output shape 104
+                'conv2': [32, 3, 3, 1, 1], 'pool2': [0, 2, 2, 2, 0],    # output shape 52
+                'conv3': [64, 3, 3, 1, 1], 'pool3': [0, 2, 2, 2, 0],    # output shape 26
+                'conv4': [128, 3, 3, 1, 1], 'pool4': [0, 2, 2, 2, 0],   # output shape 13
+                'conv5': [256, 3, 3, 1, 1],
+                'full':  [13*13*256, 2]
                 }
 
 
@@ -236,14 +218,14 @@ log_dir = "logs"
 
 '''    TENSORFLOW TRAINGING SCRIPT   '''
 
-epochs = 500
+epochs = 200
 batch_size = 64
 initital_learning_rate = 0.001
-ending_learning_rate = 1e-8
-decay_steps = 50
+ending_learning_rate = 1e-5
+decay_steps = 100
 power = 4
 momentum = 0.0
-weight_decay = 0.0005
+weight_decay = 0.5
 epsilon = 1e-8
 val_batch_size = 50
 test_batch_size = 50
@@ -264,14 +246,15 @@ inp_placeholder = tf.placeholder(tf.float32, shape=[None, 3, RES, RES])
 training_placeholder = tf.placeholder(tf.bool)
 pred_placeholder = net.forward_prop(inp_placeholder, architecture, training=training_placeholder)
 
-ground_truth_placeholder = tf.placeholder(tf.float32)
+ground_truth_placeholder = tf.placeholder(tf.int32)
 with tf.name_scope('loss'):
-    #cross_entropy = tf.reduce_mean(
-        #tf.nn.softmax_cross_entropy_with_logits_v2(labels=ground_truth_placeholder, logits=pred_placeholder))
-    mse = op.mean_square_error(pred_placeholder, ground_truth_placeholder)
-    loss = tf.reduce_sum(mse)
-tf.summary.histogram('mse', mse)
-tf.summary.scalar('loss', loss)
+    cross_entropy_mean = tf.reduce_mean(
+        tf.nn.softmax_cross_entropy_with_logits_v2(labels=ground_truth_placeholder, logits=pred_placeholder))
+    #mse = op.mean_square_error(pred_placeholder, ground_truth_placeholder)
+    #l2_reg = [tf.reduce_sum(tf.square(w)) for w in tf.trainable_variables()]
+    #loss = tf.reduce_sum(mse) #+ weight_decay * tf.reduce_sum(l2_reg)
+tf.summary.histogram('mse', cross_entropy_mean)
+tf.summary.scalar('loss', cross_entropy_mean)
 
 with tf.name_scope('training'):
 
@@ -290,13 +273,14 @@ with tf.name_scope('training'):
     tf.summary.scalar('global_step', global_step)
     tf.summary.scalar('global_decay', global_decay)
 
+
     # get optimizer and gradients
-    optimizer = tf.train.GradientDescentOptimizer(decayed_rate)
+    optimizer = tf.train.MomentumOptimizer(decayed_rate, momentum=momentum)
     
-    gradients, variables = zip(*optimizer.compute_gradients(loss))
+    gradients, variables = zip(*optimizer.compute_gradients(cross_entropy_mean))
 
     # clip gradients to prevent from exploding
-    gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
+    #gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
     gradients = [tf.where(tf.is_nan(grad), tf.zeros_like(grad), grad) if grad is not None
                  else grad for grad in gradients]
 
@@ -309,7 +293,6 @@ with tf.name_scope('accuracy'):
     #correct_prediction = tf.equal(tf.round(pred_placeholder), ground_truth_placeholder)
     num_correct = tf.reduce_sum(tf.cast(correct_prediction, tf.float32))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-tf.summary.scalar('number_correct', num_correct)
 
 saver = tf.train.Saver()
 
@@ -336,21 +319,21 @@ with tf.Session() as sess:
         if e % 100 == 0:
             # run test against validation dataset
             val_correct = 0.
-            print('\ngetting validation accuracy...')
+            print('\n\033[93mgetting validation accuracy...')
             for _ in range(int(4000/test_batch_size)):
                 val_batch, val_lbl_keys = sess.run((val_img_batch, val_label_batch))
                 val_lbls = [labels['validation'][l.decode()] for l in val_lbl_keys]
                 val_correct += sess.run(num_correct, feed_dict={inp_placeholder: val_batch,
                                                                training_placeholder: False,
                                                                ground_truth_placeholder: val_lbls})
-            print("%d/%d correct on validation" % (val_correct, val_batch_size*int(4000/test_batch_size)))
+            print("\033[93m%d/%d correct on validation" % (val_correct, val_batch_size*int(4000/test_batch_size)))
             #test_writer.add_summary(summary, global_step=(e*num_val_batches + vb))
-            print("training accuracy: %g" % (val_correct / (val_batch_size*int(4000/test_batch_size))))
+            print("\033[93mtraining accuracy: %g" % (val_correct / (val_batch_size*int(4000/test_batch_size))))
 
             if e % 500 == 0 and e != 0:
                 # save checkpoint
-                print("Saving checkpoint...")
-                save_path = os.path.join(save_dir, "conv6_sigmoid_208_%g.ckpt" % val_correct)
+                print("\033[93mSaving checkpoint...")
+                save_path = os.path.join(save_dir, "conv8_sigmoid_208_%g.ckpt" % val_correct)
                 saver.save(sess, save_path)
 
         # run training step
@@ -360,11 +343,11 @@ with tf.Session() as sess:
                                                                training_placeholder: True,
                                                                ground_truth_placeholder: train_lbls,
                                                                global_step: e})
-        print("\r%d/%d training steps.." % (e+1, epochs), end='')
+        print("\r\033[0m%d/%d training steps.." % (e+1, epochs), end='')
         train_writer.add_summary(summary, global_step=e)
 
     # run against test dataset
-    print("\nrunning test accuracy..")
+    print("\n\033[94mrunning test accuracy..")
     num_test_batches = int(len(dataset['test']) / test_batch_size)
     test_correct = 0
     for _ in range(num_test_batches):
@@ -375,11 +358,11 @@ with tf.Session() as sess:
                        training_placeholder: False,
                        ground_truth_placeholder: test_lbls})
     test_accuracy = test_correct / float(num_test_batches*test_batch_size)
-    print("test accuracy: %g" % test_accuracy)
+    print("\033[94mtest accuracy: %g" % test_accuracy)
 
     # save end
-    print("Saving final train run..")
-    save_path = os.path.join(save_dir, "conv6_sigmoid_208_%g.ckpt" % test_accuracy)
+    print("\033[93mSaving final train run..")
+    save_path = os.path.join(save_dir, "conv8_sigmoid_208_%g.ckpt" % test_accuracy)
     saver.save(sess, save_path)
 
     coord.request_stop()

@@ -170,7 +170,7 @@ def prep_classification_data(data_dir):
 
     datasets['train'] = images[:6100]
     datasets['test'] = images[6100:6850]
-    datasets['validaion'] = images[6850:7600]
+    datasets['validation'] = images[6850:7600]
     return datasets
 
 
