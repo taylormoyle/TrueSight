@@ -382,31 +382,24 @@ def non_max_suppression(bounding_boxes, conf_threshold, IoU_threshold):
     return tf.gather(bounding_boxes, predictions)
 
 
-def initialize_conv_weights(shape, name):
-    f, d, h, w = shape
-    w_in = d * h * w
-    w_out = f
-
-    std = 2 / (w_in + w_out)
-    weights = tf.truncated_normal(shape, stddev=0.001, name=name)
-    return tf.Variable(weights)
-
-def initialize_2d_weights(shape, name):
-    #w_in, w_out = shape
-    #std = 2 / (w_in + w_out)
-    weights = tf.truncated_normal(shape, stddev=0.001, name=name)
-    return tf.Variable(weights)
+def initialize_weights(params):
+    FM, C, H, W, _, _ = params
+    w = tf.truncated_normal([FM, C, H, W], stddev=0.001)
+    weights = tf.Variable(w, name='weights')
+    bn_shape = [1, FM, 1, 1]
+    beta = tf.Variable(tf.zeros(bn_shape), name='beta')
+    gamma = tf.Variable(tf.ones(bn_shape), name='gamma')
+    mean = tf.Variable(tf.zeros(bn_shape), trainable=False, name="bn_mean")
+    var = tf.Variable(tf.ones(bn_shape), trainable=False, name='bn_var')
+    return weights, beta, gamma, mean, var
 
 def update_weights(weights, gradients, learning_rate, batch_size):
     return weights - (learning_rate / batch_size * gradients)
 
 
 def normalize(inp, epsilon=1e-8):
-    mean = tf.reduce_mean(inp, axis=[2, 3])
-    inp_minus_mean = inp - tf.reshape(mean, [-1, 3, 1, 1])
-    variance = tf.reshape(tf.reduce_mean(inp_minus_mean * inp_minus_mean, axis=[2, 3]), [-1, 3, 1, 1])
-    inv_std = 1 / tf.sqrt(variance + epsilon)
-    return inp_minus_mean * inv_std
+    mean, var = tf.nn.moments(inp, axes=[1, 2], keep_dims=True)
+    return (inp - mean) / (tf.sqrt(var + epsilon))
 
 def add_layer_summaries(layer, conv, relu, batch_norm, pool=None):
     tf.summary.histogram('conv_' + layer, conv)
@@ -424,4 +417,3 @@ def add_weight_summaries(name, weights):
         tf.summary.scalar('stddev', stddev)
         tf.summary.scalar('max', tf.reduce_max(weights))
         tf.summary.scalar('min', tf.reduce_min(weights))
-        #tf.summary.histogram('histogram', weights)

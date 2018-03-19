@@ -1,6 +1,7 @@
 import cv2
 from tkinter import *
 import tensorflow as tf
+import Neural_Network as nn
 import os
 import time
 
@@ -64,6 +65,20 @@ while not (username == 'admin' and password == 'admin'):
 
     root.mainloop()
 
+model_file = 'models\\'
+architecture = {'conv1': [16, 3, 3, 3, 1, 1], 'pool1': [2, 2, 2, 0],    # output shape 104
+                'conv2': [32, 16, 3, 3, 1, 1], 'pool2': [2, 2, 2, 0],    # output shape 52
+                'conv3': [64, 32, 3, 3, 1, 1], 'pool3': [2, 2, 2, 0],    # output shape 26
+                'conv4': [128, 64, 3, 3, 1, 1], 'pool4': [2, 2, 2, 0],   # output shape 13
+                'conv5': [256, 128, 3, 3, 1, 1],
+                'full':  [13*13*256, 2]
+                }
+
+sess = tf.InteractiveSession()
+inp = tf.placeholder(tf.float32, shape=[RES, RES, 3])
+inp_transposed = tf.transpose(inp, perm=[2, 0, 1])
+fac_rec = nn.create_facial_rec(inp, architecture)
+nn.load_model(sess, model_file)
 
 cap = cv2.VideoCapture(0)
 success, image = cap.read()

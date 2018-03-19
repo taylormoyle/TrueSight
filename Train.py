@@ -202,11 +202,11 @@ def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
 
 ''''     TRAINING SCRIPT     '''
 
-architecture = {'conv1': [16, 3, 3, 1, 1], 'pool1': [0, 2, 2, 2, 0],    # output shape 104
-                'conv2': [32, 3, 3, 1, 1], 'pool2': [0, 2, 2, 2, 0],    # output shape 52
-                'conv3': [64, 3, 3, 1, 1], 'pool3': [0, 2, 2, 2, 0],    # output shape 26
-                'conv4': [128, 3, 3, 1, 1], 'pool4': [0, 2, 2, 2, 0],   # output shape 13
-                'conv5': [256, 3, 3, 1, 1],
+architecture = {'conv1': [16, 3, 3, 3, 1, 1], 'pool1': [2, 2, 2, 0],    # output shape 104
+                'conv2': [32, 16, 3, 3, 1, 1], 'pool2': [2, 2, 2, 0],    # output shape 52
+                'conv3': [64, 32, 3, 3, 1, 1], 'pool3': [2, 2, 2, 0],    # output shape 26
+                'conv4': [128, 64, 3, 3, 1, 1], 'pool4': [2, 2, 2, 0],   # output shape 13
+                'conv5': [256, 128, 3, 3, 1, 1],
                 'full':  [13*13*256, 2]
                 }
 
@@ -219,7 +219,7 @@ log_dir = "logs"
 '''    TENSORFLOW TRAINGING SCRIPT   '''
 
 epochs = 200
-batch_size = 64
+batch_size = 96
 initital_learning_rate = 0.001
 ending_learning_rate = 1e-5
 decay_steps = 100
@@ -231,29 +231,20 @@ val_batch_size = 50
 test_batch_size = 50
 
 dataset, labels = prep_classification_data(data_dir)
-#train_data, train_labels = filter_data(dataset['training'], labels, classes)
-#val_data, val_labels = filter_data(dataset['validation'], labels, classes)
-#test_data, test_labels = filter_data(dataset['test'], labels, classes)
 
 with tf.device('/cpu:0'):
     val_img_batch, val_label_batch = load_data(dataset['validation'], val_batch_size, None, training=False)
     test_img_batch, test_label_batch = load_data(dataset['test'], test_batch_size, None, training=False)
 train_img_batch, train_label_batch = load_data(dataset['train'], batch_size, epochs)
 
-net = nn.Neural_Network("facial_recognition", architecture, hypers)
-
 inp_placeholder = tf.placeholder(tf.float32, shape=[None, 3, RES, RES])
 training_placeholder = tf.placeholder(tf.bool)
-pred_placeholder = net.forward_prop(inp_placeholder, architecture, training=training_placeholder)
+fac_rec_preds = nn.create_facial_rec(inp_placeholder, architecture, training=training_placeholder)
 
 ground_truth_placeholder = tf.placeholder(tf.int32)
 with tf.name_scope('loss'):
     cross_entropy_mean = tf.reduce_mean(
-        tf.nn.softmax_cross_entropy_with_logits_v2(labels=ground_truth_placeholder, logits=pred_placeholder))
-    #mse = op.mean_square_error(pred_placeholder, ground_truth_placeholder)
-    #l2_reg = [tf.reduce_sum(tf.square(w)) for w in tf.trainable_variables()]
-    #loss = tf.reduce_sum(mse) #+ weight_decay * tf.reduce_sum(l2_reg)
-tf.summary.histogram('mse', cross_entropy_mean)
+        tf.nn.softmax_cross_entropy_with_logits_v2(labels=ground_truth_placeholder, logits=fac_rec_preds))
 tf.summary.scalar('loss', cross_entropy_mean)
 
 with tf.name_scope('training'):
@@ -269,10 +260,6 @@ with tf.name_scope('training'):
     decayed_rate = (learning_rate - ending_learning_rate) * \
                    tf.pow((1 - global_decay / decay_steps), power) + \
                    ending_learning_rate
-    tf.summary.scalar('learning_rate', decayed_rate)
-    tf.summary.scalar('global_step', global_step)
-    tf.summary.scalar('global_decay', global_decay)
-
 
     # get optimizer and gradients
     optimizer = tf.train.MomentumOptimizer(decayed_rate, momentum=momentum)
@@ -286,11 +273,8 @@ with tf.name_scope('training'):
 
     train_step = optimizer.apply_gradients(zip(gradients, variables))
 
-    #train_step = tf.train.AdadeltaOptimizer(initital_learning_rate).minimize(loss)
-
 with tf.name_scope('accuracy'):
-    correct_prediction = tf.equal(tf.argmax(pred_placeholder, 1), tf.argmax(ground_truth_placeholder, 1))
-    #correct_prediction = tf.equal(tf.round(pred_placeholder), ground_truth_placeholder)
+    correct_prediction = tf.equal(tf.argmax(fac_rec_preds, 1), tf.argmax(ground_truth_placeholder, 1))
     num_correct = tf.reduce_sum(tf.cast(correct_prediction, tf.float32))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
@@ -313,8 +297,6 @@ with tf.Session() as sess:
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(coord=coord)
 
-    #num_train_batches = int(len(train_data) / batch_size)
-    #print(num_train_batches)
     for e in range(epochs):
         if e % 100 == 0:
             # run test against validation dataset
@@ -333,7 +315,7 @@ with tf.Session() as sess:
             if e % 500 == 0 and e != 0:
                 # save checkpoint
                 print("\033[93mSaving checkpoint...")
-                save_path = os.path.join(save_dir, "conv8_sigmoid_208_%g.ckpt" % val_correct)
+                save_path = os.path.join(save_dir, "conv6_208_%g.ckpt" % val_correct)
                 saver.save(sess, save_path)
 
         # run training step
@@ -362,7 +344,7 @@ with tf.Session() as sess:
 
     # save end
     print("\033[93mSaving final train run..")
-    save_path = os.path.join(save_dir, "conv8_sigmoid_208_%g.ckpt" % test_accuracy)
+    save_path = os.path.join(save_dir, "conv6_208_%g.ckpt" % test_accuracy)
     saver.save(sess, save_path)
 
     coord.request_stop()
