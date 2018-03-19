@@ -11,8 +11,8 @@ from tensorflow.python import debug as tf_debug
 
 RES = 208
 DELTA_HUE = 0.2
-MAX_DELTA_SATURATION = 1.5
-MIN_DELTA_SATURATION = 0.5
+MAX_DELTA_SATURATION = 0.3
+MIN_DELTA_SATURATION = 0.1
 MAX_DELTA_BRIGHTNESS = 0.2
 
 
@@ -153,11 +153,15 @@ def shift_image(image):
 # Perform transformations, normalize images, return array of tuples [(norm_image, label)]
 def process_data(images):
     # Perform Transformations on all images to diversify dataset
-    image_brighterized = tf.image.random_brightness(images, MAX_DELTA_BRIGHTNESS)
-    image_huerized = tf.image.random_hue(image_brighterized, DELTA_HUE)
+    image_huerized = tf.image.random_hue(images, DELTA_HUE)
     image_saturized = tf.image.random_saturation(image_huerized, MIN_DELTA_SATURATION, MAX_DELTA_SATURATION)
     image_flipperized = tf.image.random_flip_left_right(image_saturized)
-    return image_flipperized
+
+    brightness_min = 1.0 - (MAX_DELTA_BRIGHTNESS / 100)
+    brightness_max = 1.0 - (MAX_DELTA_BRIGHTNESS / 100)
+    bright_value = tf.random_uniform([1], minval=brightness_min, maxval=brightness_max)
+    image_brighterized = tf.multiply(tf.cast(image_flipperized, dtype=tf.float32), bright_value)
+    return image_brighterized
 
 
 def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
@@ -218,11 +222,11 @@ log_dir = "logs"
 
 '''    TENSORFLOW TRAINGING SCRIPT   '''
 
-epochs = 200
-batch_size = 96
-initital_learning_rate = 0.001
-ending_learning_rate = 1e-5
-decay_steps = 100
+epochs = 500
+batch_size = 160
+initital_learning_rate = 0.0001
+ending_learning_rate = 1e-8
+decay_steps = 200
 power = 4
 momentum = 0.0
 weight_decay = 0.5
@@ -245,7 +249,7 @@ ground_truth_placeholder = tf.placeholder(tf.int32)
 with tf.name_scope('loss'):
     cross_entropy_mean = tf.reduce_mean(
         tf.nn.softmax_cross_entropy_with_logits_v2(labels=ground_truth_placeholder, logits=fac_rec_preds))
-tf.summary.scalar('loss', cross_entropy_mean)
+#tf.summary.scalar('loss', cross_entropy_mean)
 
 with tf.name_scope('training'):
 
@@ -296,6 +300,7 @@ with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(coord=coord)
+    nn.load_model(sess, 'C:\\Users\\Shadow\\PycharmProjects\\TrueSight\\models\\conv6_208_0.95625.ckpt')
 
     for e in range(epochs):
         if e % 100 == 0:
