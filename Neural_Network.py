@@ -4,10 +4,18 @@ from math import sqrt
 import Operations_tf as op
 
 def create_facial_rec(inp, architecture, training=False):
+    '''
+    Constructs the Neural Net Graph
+    :param inp: Input Tensor
+    :param architecture: Architecture of the Network
+    :param training: Toggle Training
+    :return: Last node on graph
+    '''
 
     '''   LAYER 1   '''
     FM, C, H, W, _, pad = architecture['conv1']
     p_h, p_w, stride, _ = architecture['pool1']
+
     with tf.name_scope('layer_1'):
         w_conv1, beta1, gamma1, mean1, var1 = op.initialize_weights(architecture['conv1'])
         w = tf.transpose(w_conv1, perm=[2, 3, 1, 0])
@@ -20,8 +28,8 @@ def create_facial_rec(inp, architecture, training=False):
         mean1 = batch_norm1[2]
         var1 = batch_norm1[3]
 
-        op.add_weight_summaries('mean', mean1)
-        op.add_weight_summaries('var', var1)
+        #op.add_weight_summaries('mean', mean1)
+        #op.add_weight_summaries('var', var1)
 
     # op.add_layer_summaries('1', conv1, relu1, batch_norm1[0], pool=pool1)
 
@@ -97,8 +105,8 @@ def create_facial_rec(inp, architecture, training=False):
         mean5 = batch_norm5[2]
         var5 = batch_norm5[3]
 
-        op.add_weight_summaries('mean', mean5)
-        op.add_weight_summaries('var', var5)
+        #op.add_weight_summaries('mean', mean5)
+        #op.add_weight_summaries('var', var5)
 
     # op.add_layer_summaries('5', conv5, relu5, batch_norm5[0], pool=pool5)
 
@@ -113,11 +121,8 @@ def create_facial_rec(inp, architecture, training=False):
         full_conn = op.full_conn(flatten, w_full, b_full)
     tf.summary.histogram('full_conn', full_conn)
 
-    if training is not None:
-        prediction = full_conn
-    else:
-        prediction = tf.nn.softmax(full_conn)
-
+    #prediction = full_conn                   # for training
+    prediction = tf.nn.softmax(full_conn)
     return prediction
 
 

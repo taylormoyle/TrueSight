@@ -162,15 +162,38 @@ def prep_all_face_data(img_dir, xml_dir, test_percent=10, validation_percent=10)
 
     return dataset, labels
 
+
+def prep_temp_noface_data(img_dir, test_percent=10, validation_percent=10):
+    dataset = []
+    labels = {}
+    img_path = os.path.join(img_dir, "*")
+    img_files = glob.glob(img_path)
+    sorted(img_files)
+
+    for f in img_files:
+        _, name = os.path.split(f)
+        dataset.append(f)
+
+    num_validation_images = int(len(dataset) * (validation_percent / 100))
+    num_test_images = int(len(dataset) * (test_percent / 100))
+
+    validation_dataset = dataset[0:num_validation_images]
+    test_dataset = dataset[num_validation_images:(num_test_images + num_validation_images)]
+    train_dataset = dataset[(num_test_images + num_validation_images):]
+    dataset = {'train': train_dataset, 'test': test_dataset, 'validation': validation_dataset}
+
+    return dataset, labels
+
+
 def prep_classification_data(data_dir):
     datasets = {'train': [], 'test': [], 'validation': []}
     path = os.path.join(data_dir, '*', '*.jpg')
     images = glob.glob(path)
     random.shuffle(images)
 
-    datasets['train'] = images[:6100]
-    datasets['test'] = images[6100:6850]
-    datasets['validation'] = images[6850:7600]
+    datasets['train'] = images[:800]
+    datasets['test'] = images[800:900]
+    datasets['validation'] = images[900:]
     return datasets
 
 
@@ -278,10 +301,20 @@ def rescale_labels(x, y, box_w, box_h, img_w, img_h, pad_top, pad_left):
 #process_data(dataset['test'], valtest_labels, 'test', 'data\\classification\\test\\faces')
 #process_data(dataset['validation'], valtest_labels, 'validation', 'data\\classification\\validation\\faces')
 
-#dataset, _ = prep_all_face_data('data\\VOC2012\\JPEGImages', 'data\\VOC2012\\Annotations')
-dataset = prep_classification_data('data\\lfw')
+#dataset = prep_classification_data('data\\lfw')
 
-process_data(dataset['train'], None, 'train', 'data\\classification\\train\\faces')
-process_data(dataset['test'], None, 'test', 'data\\classification\\test\\faces')
-process_data(dataset['validation'], None, 'validation', 'data\\classification\\validation\\faces')
+#dataset = prep_classification_data('C:\\Users\\Shadow\\Downloads\\19--Couple')
+
+#dataset, _ = prep_all_face_data('data\\VOC2012\\JPEGImages', 'data\\VOC2012\\Annotations')
+
+#process_data(dataset['train'], None, 'train', 'data\\classification\\train\\faces')
+#process_data(dataset['test'], None, 'test', 'data\\classification\\test\\faces')
+#process_data(dataset['validation'], None, 'validation', 'data\\classification\\validation\\faces')
+
+
+#dataset, _ = prep_temp_noface_data('temp_pics')
+#process_data(dataset['train'], None, 'train', 'resized_temp_pics')
+#process_data(dataset['test'], None, 'test', 'resized_temp_pics')
+#process_data(dataset['validation'], None, 'validation', 'resized_temp_pics')
+
 

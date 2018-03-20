@@ -11,12 +11,18 @@ from tensorflow.python import debug as tf_debug
 
 RES = 208
 DELTA_HUE = 0.2
-MAX_DELTA_SATURATION = 0.3
+MAX_DELTA_SATURATION = 0.4
 MIN_DELTA_SATURATION = 0.1
-MAX_DELTA_BRIGHTNESS = 0.2
+MAX_DELTA_BRIGHTNESS = 0.3
 
 
 def prep_classification_data(data_dir):
+    '''
+    Prepares dataset by matching filenames with their corresponding labels
+    :param data_dir: The directory of the dataset
+    :return: Data: Dictionary of filenames, separated by test, train, validaiton.
+             Labels: Dictionary of labels with filenames as key.
+    '''
     data = {'train': [], 'test': [], 'validation': []}
     labels = {'train': {}, 'test': {}, 'validation': {}}
     for d in data:
@@ -32,6 +38,7 @@ def prep_classification_data(data_dir):
                     labels[d][f] = label
         random.shuffle(data[d])
     return data, labels
+
 
 def filter_data(filenames, labels, classes):
     ret_imgs = []
@@ -100,8 +107,12 @@ def prep_face_data(train_fn, validation_fn, data_directory):
     return dataset, train_labels, valtest_labels
 
 
-# Loads each file as np RGB array, and returns an array of tuples [(image, label)]
-def load_img(filename_queue, training):
+def load_img(filename_queue):
+    '''
+    Loads jpeg image and handsoff to process for data augmentation
+    :param filename_queue: TensorFlow queue
+    :return: Decoded image and filename
+    '''
     reader = tf.WholeFileReader()
     key, value = reader.read(filename_queue)
 
@@ -114,9 +125,17 @@ def load_img(filename_queue, training):
 
 
 def load_data(filenames, batch_size, num_epochs, training=True):
+    '''
+    Constructs TensorFlow filename queue and batch-shuffler thread-runners
+    :param filenames:
+    :param batch_size:
+    :param num_epochs:
+    :param training:
+    :return: Image batch and Label batch thread-runners
+    '''
     filename_queue = tf.train.string_input_producer(
         filenames, num_epochs=num_epochs, shuffle=True)
-    image, label = load_img(filename_queue, training)
+    image, label = load_img(filename_queue)
     min_after_dequeue = 1000 if training else 49
     capacity = (min_after_dequeue + 3 * batch_size) if training else batch_size
     image_batch, label_batch = tf.train.shuffle_batch(
@@ -126,8 +145,9 @@ def load_data(filenames, batch_size, num_epochs, training=True):
     return image_batch, label_batch
 
 
-# Resize image to a 416 x 416 resolution
+# Deprecated: Use in Resize_Data
 def resize_img(img):
+
     h, w, _ = img.get_shape()
     new_h = 0
     new_w = 0
@@ -146,12 +166,19 @@ def resize_img(img):
 
     return img_resized
 
+
+# Unimplemented
 def shift_image(image):
     shift_x = tf.random_uniform([1], minval=-10, maxval=10, dtype=tf.int32)
     shift_y = tf.random_uniform([1], minval=-10, maxval=10, dtype=tf.int32)
 
-# Perform transformations, normalize images, return array of tuples [(norm_image, label)]
+
 def process_data(images):
+    '''
+    Performs transformations to pseudo-expand dataset
+    :param images:
+    :return: Augmented Images
+    '''
     # Perform Transformations on all images to diversify dataset
     image_huerized = tf.image.random_hue(images, DELTA_HUE)
     image_saturized = tf.image.random_saturation(image_huerized, MIN_DELTA_SATURATION, MAX_DELTA_SATURATION)
@@ -165,6 +192,17 @@ def process_data(images):
 
 
 def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
+    '''
+    Calculates numerical gradients and compares against analytical grtadients by calculating relative error
+    :param net: Neural Net Graph
+    :param inp: Image
+    :param labels: Labels
+    :param weights: Learnable Paramaters
+    :param gradients: Analytical Gradients calculated by back-prop
+    :param infos: Arthitecture of Network
+    :param epsilon: Small floating point value, used for numerical stability
+    :return: Relative Error
+    '''
     rel_error = {}
     check_num_grads = 5
     for w in weights:
@@ -204,7 +242,7 @@ def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
         rel_error[w] = num / denom
     return rel_error
 
-''''     TRAINING SCRIPT     '''
+'''     TRAINING SCRIPT     '''
 
 architecture = {'conv1': [16, 3, 3, 3, 1, 1], 'pool1': [2, 2, 2, 0],    # output shape 104
                 'conv2': [32, 16, 3, 3, 1, 1], 'pool2': [2, 2, 2, 0],    # output shape 52
@@ -214,46 +252,54 @@ architecture = {'conv1': [16, 3, 3, 3, 1, 1], 'pool1': [2, 2, 2, 0],    # output
                 'full':  [13*13*256, 2]
                 }
 
-
-hypers = [7]
+# Specify where to load data and to save models and logs
 data_dir = "data\\classification"
 save_dir = "models"
 log_dir = "logs"
 
+
 '''    TENSORFLOW TRAINGING SCRIPT   '''
 
-epochs = 500
+# Training Hyperparamaters
+
+epochs = 300
 batch_size = 160
-initital_learning_rate = 0.0001
-ending_learning_rate = 1e-8
-decay_steps = 200
+initital_learning_rate = 0.001
+ending_learning_rate = 1e-5
+decay_steps = 500
 power = 4
-momentum = 0.0
+momentum = 0.9
 weight_decay = 0.5
 epsilon = 1e-8
 val_batch_size = 50
 test_batch_size = 50
 
+
+# Prepare data
 dataset, labels = prep_classification_data(data_dir)
 
+# Create them training, test and validaiton load-runners
 with tf.device('/cpu:0'):
     val_img_batch, val_label_batch = load_data(dataset['validation'], val_batch_size, None, training=False)
     test_img_batch, test_label_batch = load_data(dataset['test'], test_batch_size, None, training=False)
 train_img_batch, train_label_batch = load_data(dataset['train'], batch_size, epochs)
 
+# Constructing the face_rec graph
 inp_placeholder = tf.placeholder(tf.float32, shape=[None, 3, RES, RES])
 training_placeholder = tf.placeholder(tf.bool)
 fac_rec_preds = nn.create_facial_rec(inp_placeholder, architecture, training=training_placeholder)
 
+# Calculate loss using cross entropy
 ground_truth_placeholder = tf.placeholder(tf.int32)
 with tf.name_scope('loss'):
     cross_entropy_mean = tf.reduce_mean(
         tf.nn.softmax_cross_entropy_with_logits_v2(labels=ground_truth_placeholder, logits=fac_rec_preds))
-#tf.summary.scalar('loss', cross_entropy_mean)
+tf.summary.scalar('loss', cross_entropy_mean)
+
 
 with tf.name_scope('training'):
 
-    # decay learning rate..
+    # Decay the learning rate
     learning_rate = tf.convert_to_tensor(initital_learning_rate, dtype=tf.float32)
     global_step = tf.placeholder(tf.float32)
     decay_steps = tf.convert_to_tensor(decay_steps, dtype=tf.float32)
@@ -265,46 +311,54 @@ with tf.name_scope('training'):
                    tf.pow((1 - global_decay / decay_steps), power) + \
                    ending_learning_rate
 
-    # get optimizer and gradients
+    # Get optimizer and gradients
     optimizer = tf.train.MomentumOptimizer(decayed_rate, momentum=momentum)
-    
     gradients, variables = zip(*optimizer.compute_gradients(cross_entropy_mean))
 
-    # clip gradients to prevent from exploding
+    # Clip gradients to prevent exploding
     #gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
     gradients = [tf.where(tf.is_nan(grad), tf.zeros_like(grad), grad) if grad is not None
                  else grad for grad in gradients]
 
+    # Apply gradients
     train_step = optimizer.apply_gradients(zip(gradients, variables))
 
+
 with tf.name_scope('accuracy'):
+    # Calculate Accuracy
     correct_prediction = tf.equal(tf.argmax(fac_rec_preds, 1), tf.argmax(ground_truth_placeholder, 1))
     num_correct = tf.reduce_sum(tf.cast(correct_prediction, tf.float32))
 accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
+# Creates saver and merged summaries
 saver = tf.train.Saver()
-
 merged = tf.summary.merge_all()
 
 s = t.time()
+
+
 with tf.Session() as sess:
+    # Wrap session in debugger
     #sess = tf_debug.LocalCLIDebugWrapperSession(sess)
     #sess.add_tensor_filter("has_inf_or_nan", tf_debug.has_inf_or_nan)
 
+    # Create summary file-writers
     test_log_dir = os.path.join(log_dir, 'test')
     train_log_dir = os.path.join(log_dir, 'train')
     train_writer = tf.summary.FileWriter(train_log_dir, sess.graph)
     #test_writer = tf.summary.FileWriter(test_log_dir, sess.graph)
 
+    # Initialize global and local variables and start thread-runners
     sess.run(tf.local_variables_initializer())
     sess.run(tf.global_variables_initializer())
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(coord=coord)
-    nn.load_model(sess, 'C:\\Users\\Shadow\\PycharmProjects\\TrueSight\\models\\conv6_208_0.95625.ckpt')
+    #nn.load_model(sess, 'C:\\Users\\Shadow\\PycharmProjects\\TrueSight\\models\\')
+
 
     for e in range(epochs):
         if e % 100 == 0:
-            # run test against validation dataset
+            # Run test against validation dataset
             val_correct = 0.
             print('\n\033[93mgetting validation accuracy...')
             for _ in range(int(4000/test_batch_size)):
@@ -318,12 +372,12 @@ with tf.Session() as sess:
             print("\033[93mtraining accuracy: %g" % (val_correct / (val_batch_size*int(4000/test_batch_size))))
 
             if e % 500 == 0 and e != 0:
-                # save checkpoint
+                # Save checkpoint
                 print("\033[93mSaving checkpoint...")
                 save_path = os.path.join(save_dir, "conv6_208_%g.ckpt" % val_correct)
                 saver.save(sess, save_path)
 
-        # run training step
+        # Run training step
         train_batch, train_lbl_keys = sess.run((train_img_batch, train_label_batch))
         train_lbls = [labels['train'][l.decode()] for l in train_lbl_keys]
         summary, _ = sess.run([merged, train_step], feed_dict={inp_placeholder: train_batch,
@@ -333,7 +387,7 @@ with tf.Session() as sess:
         print("\r\033[0m%d/%d training steps.." % (e+1, epochs), end='')
         train_writer.add_summary(summary, global_step=e)
 
-    # run against test dataset
+    # Run against test dataset
     print("\n\033[94mrunning test accuracy..")
     num_test_batches = int(len(dataset['test']) / test_batch_size)
     test_correct = 0
@@ -347,7 +401,7 @@ with tf.Session() as sess:
     test_accuracy = test_correct / float(num_test_batches*test_batch_size)
     print("\033[94mtest accuracy: %g" % test_accuracy)
 
-    # save end
+    # Save end
     print("\033[93mSaving final train run..")
     save_path = os.path.join(save_dir, "conv6_208_%g.ckpt" % test_accuracy)
     saver.save(sess, save_path)

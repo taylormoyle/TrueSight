@@ -10,32 +10,53 @@ CELL_WIDTH = 32
 GRID_HEIGHT = 13
 GRID_WIDTH = 13
 
+
 """******************************************
         FORWARD PROP OPERATIONS
 ******************************************"""
 
 def pool(inp, p_h, p_w, stride, pad=0):
+    '''
+    Performs Max-Pooling -- Req1uires Non-Overlapping, Square Windows
+    :param inp: Overlay Matrix
+    :param p_h: Pooling Window Height
+    :param p_w: Pooling Window Width
+    :param stride: Stride of Pooling Window
+    :param pad: Output Padding
+    :return: Max-Pooled Matrix
+    '''
     N, D, H, W = tf.shape(inp)[0], tf.shape(inp)[1], tf.shape(inp)[2], tf.shape(inp)[3]
-    #o_h = tf.cast(((h + 2 * pad - p_h) / stride + 1), dtype=tf.int32)
-    #o_w = tf.cast(((w + 2 * pad - p_w) / stride + 1), dtype=tf.int32)
-
-    #inp_reshaped = tf.transpose(tf.reshape(inp, [N*D, 1, h, w]), perm=[0, 2, 3, 1])
-    #inp_col = img_to_col(inp_reshaped, p_h, p_w, o_h, o_w, pad, stride)
-    #inp_col = tf.extract_image_patches(inp_reshaped, ksizes=[1, 2, 2, 1], strides=[1, 2, 2, 1], rates=[1, 1, 1, 1], padding="VALID")
-    #inp_col = tf.transpose(tf.reshape(inp_col, [-1, p_h*p_w]), perm=[1, 0])
-
-    #max_indices = tf.argmax(inp_col, axis=0)
-    #max_vals = tf.gather(inp_col, [tf.cast(max_indices, dtype=tf.int32), tf.range(tf.shape(inp_col)[1])])
-    #max_reshape = tf.reshape(max_vals, [o_h, o_w, N, D])
-    #tf.transpose(max_reshape, perm=[2, 3, 0, 1])
-
-    inp_reshaped = tf.reshape(inp, [N, D, tf.cast(H/p_h, dtype=tf.int32), p_h,
-                           tf.cast(W/p_w, dtype=tf.int32), p_w])
+    inp_reshaped = tf.reshape(inp, [N, D, tf.cast(H/p_h, dtype=tf.int32), p_h, tf.cast(W/p_w, dtype=tf.int32), p_w])
     out = tf.reduce_max(tf.reduce_max(inp_reshaped, axis=3), axis=4)
     return out
 
 
+# Use this one if you have Rectangular windows
+def rect_pool(inp, p_h, p_w, stride, pad=0):
+    o_h = tf.cast(((h + 2 * pad - p_h) / stride + 1), dtype=tf.int32)
+    o_w = tf.cast(((w + 2 * pad - p_w) / stride + 1), dtype=tf.int32)
+
+    inp_reshaped = tf.transpose(tf.reshape(inp, [N * D, 1, h, w]), perm=[0, 2, 3, 1])
+    inp_col = img_to_col(inp_reshaped, p_h, p_w, o_h, o_w, pad, stride)
+    inp_col = tf.extract_image_patches(inp_reshaped, ksizes=[1, 2, 2, 1], strides=[1, 2, 2, 1], rates=[1, 1, 1, 1],
+                                       padding="VALID")
+    inp_col = tf.transpose(tf.reshape(inp_col, [-1, p_h * p_w]), perm=[1, 0])
+
+    max_indices = tf.argmax(inp_col, axis=0)
+    max_vals = tf.gather(inp_col, [tf.cast(max_indices, dtype=tf.int32), tf.range(tf.shape(inp_col)[1])])
+    max_reshape = tf.reshape(max_vals, [o_h, o_w, N, D])
+    tf.transpose(max_reshape, perm=[2, 3, 0, 1])
+
+
 def convolve(inp, weights, stride=1, pad=0):
+    '''
+    Performs fast-Convolution using im2col to convert to matrix multiplication
+    :param inp: Input Images
+    :param weights: Convolution Filters
+    :param stride: Stride of Convolution Window
+    :param pad: Output Padding
+    :return: Convolved Images
+    '''
     bat, i_c, i_h, i_w = tf.shape(inp)[0], tf.shape(inp)[1], tf.shape(inp)[2], tf.shape(inp)[3]
     n_f, n_c, f_h, f_w = tf.shape(weights)[0], tf.shape(weights)[1], tf.shape(weights)[2], tf.shape(weights)[3]
     o_h = tf.cast(((i_h + 2 * pad - f_h) / stride + 1), dtype=tf.int32)
@@ -54,8 +75,19 @@ def convolve(inp, weights, stride=1, pad=0):
     return tf.transpose(output, perm=[3, 0, 1, 2])
 
 
-def batch_normalize(inp, beta, gamma, running_mean, running_var,
-                    training=False, decay=0.9, epsilon=1e-8):
+def batch_normalize(inp, beta, gamma, running_mean, running_var, training=False, decay=0.9, epsilon=1e-8):
+    '''
+    Calculates samples Mean and Variance to normalize the Input
+    :param inp: Input Batches
+    :param beta: Learnable Paramater to shift Output
+    :param gamma: Learnable Paramater to scale Output
+    :param running_mean: Population Mean
+    :param running_var: Population Variance
+    :param training: Toggle Training
+    :param decay: How much of the previous Population Mean/Variance to keep
+    :param epsilon: Small floating-poing number for numerical stability
+    :return: Normalized Input
+    '''
     N, D, H, W = tf.shape(inp)[0], tf.shape(inp)[1], tf.shape(inp)[2], tf.shape(inp)[3]
 
     def is_training():
@@ -82,20 +114,25 @@ def batch_normalize(inp, beta, gamma, running_mean, running_var,
 
 
 def full_conn(inp, weights, bias):
+    ''' Computes Dense Layer Outputs '''
+
     full_conn = tf.matmul(inp, weights) + bias
     return full_conn
+
 
 """******************************************
         ACTIVATION FUNCTIONS
 ******************************************"""
 
 def relu(inp):
+    ''' Calculates ReLU Activation (max(0, inp) element-wise) '''
     zeros = tf.zeros_like(inp)
     return tf.where(tf.greater_equal(inp, zeros), inp, zeros)
     #return leaky_relu(inp)
 
 
 def leaky_relu(inp, alpha=0.01):
+    ''' Calculates Leaky ReLU Activation (max(inp*alpha, inp) element-wise) '''
     zeros = tf.zeros_like(inp)
     return tf.where(tf.greater_equal(inp, zeros), inp, inp*alpha)
 
@@ -109,6 +146,15 @@ def sigmoid(inp):
 ******************************************"""
 
 def cost_function(inp, label, batch_size, lambd_coord, lambd_noobj):
+    '''
+    Calculates Cost Analysis based on YOLO's Cost Function, used for multi-objhect detection
+    :param inp: Output of the Neural Network Graph
+    :param label: Ground-Truth Label
+    :param batch_size: Size of Batch
+    :param lambd_coord: Amount to weigh cost of cells responsible for detecting objects
+    :param lambd_noobj: Amount to weigh cost of cells NOT responsible for detecting objects
+    :return: Loss
+    '''
     inp_reshaped = tf.reshape(inp, [169, -1])
     label_reshaped = tf.reshape(label, [169, -1])
 
