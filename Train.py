@@ -9,34 +9,45 @@ import random
 from glob import glob
 from tensorflow.python import debug as tf_debug
 
-RES = 208
-DELTA_HUE = 0.2
-MAX_DELTA_SATURATION = 0.4
-MIN_DELTA_SATURATION = 0.1
+RES = 416
+DELTA_HUE = 0.32
+MAX_DELTA_SATURATION = 1.5
+MIN_DELTA_SATURATION = 0.5
 MAX_DELTA_BRIGHTNESS = 0.3
+MAX_CONTRAST = 1.5
+MIN_CONTRAST = 0.5
 
 
-def prep_classification_data(data_dir):
+def prep_classification_data(data_dir, focus):
     '''
     Prepares dataset by matching filenames with their corresponding labels
     :param data_dir: The directory of the dataset
     :return: Data: Dictionary of filenames, separated by test, train, validaiton.
              Labels: Dictionary of labels with filenames as key.
     '''
-    data = {'train': [], 'test': [], 'validation': []}
-    labels = {'train': {}, 'test': {}, 'validation': {}}
-    for d in data:
-        class_path = os.path.join(data_dir, d, '*')
-        classes = glob(class_path)
-        for c,l in zip(classes, range(len(classes))):
-            _ , obj = os.path.split(c)
-            search_path = os.path.join(c, '*')
-            for f in glob(search_path):
-                if '.jpg' in f:
-                    data[d].append(f)
-                    label = np.array([1, 0]) if obj == 'faces' else np.array([0, 1])
-                    labels[d][f] = label
-        random.shuffle(data[d])
+    data = {'train': {}, 'test': {}, 'validation': {}}
+    labels = {}
+    class_path = os.path.join(data_dir, '*')
+    classes = glob(class_path)
+    for c in classes:
+        files = []
+        _ , obj = os.path.split(c)
+        search_path = os.path.join(c, '*')
+        for f in glob(search_path):
+            files.append(f)
+            label = [1] if obj == focus else [0]
+            labels[f] = label
+
+        random.shuffle(files)
+
+        which = 'pos' if obj == focus else 'neg'
+
+        train_size = int(len(files) * 0.8)
+        val_size = int(len(files) * 0.1)
+        data['train'][which] = files[:train_size]
+        data['validation'][which] = files[train_size:train_size+val_size]
+        data['test'][which] = files[train_size+val_size:]
+
     return data, labels
 
 
@@ -118,13 +129,12 @@ def load_img(filename_queue):
 
     image = tf.image.decode_jpeg(value, channels=3)
     image.set_shape([RES, RES, 3])
-    #image = resize_img(image)
     image = process_data(image)
     image = tf.transpose(image, perm=[2, 0, 1])
     return image, key
 
 
-def load_data(filenames, batch_size, num_epochs, training=True):
+def load_data(filenames, batch_size, perc_pos, training=True):
     '''
     Constructs TensorFlow filename queue and batch-shuffler thread-runners
     :param filenames:
@@ -133,45 +143,44 @@ def load_data(filenames, batch_size, num_epochs, training=True):
     :param training:
     :return: Image batch and Label batch thread-runners
     '''
-    filename_queue = tf.train.string_input_producer(
-        filenames, num_epochs=num_epochs, shuffle=True)
-    image, label = load_img(filename_queue)
-    min_after_dequeue = 1000 if training else 49
-    capacity = (min_after_dequeue + 3 * batch_size) if training else batch_size
-    image_batch, label_batch = tf.train.shuffle_batch(
-        [image, label], batch_size=batch_size, capacity=capacity,
-        min_after_dequeue=min_after_dequeue
+
+    # create positive queue
+    pos_filenames = filenames['pos']
+    pos_queue = tf.train.string_input_producer(pos_filenames, shuffle=False)
+    pos_image, pos_label = load_img(pos_queue)
+
+    # create neg queue
+    neg_filenames = filenames['neg']
+    neg_queue = tf.train.string_input_producer(neg_filenames, shuffle=False)
+    neg_image, neg_label = load_img(neg_queue)
+
+    # collect batches
+    pos_batch_size = int(batch_size * perc_pos)
+    neg_batch_size = batch_size - pos_batch_size
+
+    # get pos batch
+    pos_image_batch, pos_label_batch = tf.train.batch([pos_image, pos_label],
+                                                      batch_size=pos_batch_size,
+                                                      capacity=pos_batch_size
     )
+
+    # get neg batch
+    neg_image_batch, neg_label_batch = tf.train.batch([neg_image, neg_label],
+                                                      batch_size=neg_batch_size,
+                                                      capacity=neg_batch_size
+    )
+
+    # join pos and neg batches
+    image_batch = tf.concat([pos_image_batch, neg_image_batch], axis=0)
+    label_batch = tf.concat([pos_label_batch, neg_label_batch], axis=0)
+
     return image_batch, label_batch
-
-
-# Deprecated: Use in Resize_Data
-def resize_img(img):
-
-    h, w, _ = img.get_shape()
-    new_h = 0
-    new_w = 0
-    if h > w:
-        new_h = RES
-        new_w = int((w / h) * new_h)
-    elif w > h:
-        new_w = RES
-        new_h = int((w / h) / new_w)
-    else:
-        new_h = RES
-        new_w = RES
-
-    img_resized = tf.image.resize_images(img, [new_h, new_w])
-    img_resized = tf.image.resize_image_with_crop_or_pad(img_resized, RES, RES)
-
-    return img_resized
 
 
 # Unimplemented
 def shift_image(image):
     shift_x = tf.random_uniform([1], minval=-10, maxval=10, dtype=tf.int32)
     shift_y = tf.random_uniform([1], minval=-10, maxval=10, dtype=tf.int32)
-
 
 def process_data(images):
     '''
@@ -181,8 +190,9 @@ def process_data(images):
     '''
     # Perform Transformations on all images to diversify dataset
     image_huerized = tf.image.random_hue(images, DELTA_HUE)
-    image_saturized = tf.image.random_saturation(image_huerized, MIN_DELTA_SATURATION, MAX_DELTA_SATURATION)
-    image_flipperized = tf.image.random_flip_left_right(image_saturized)
+    #image_saturized = tf.image.random_saturation(image_huerized, MIN_DELTA_SATURATION, MAX_DELTA_SATURATION)
+    #image_contrasterized = tf.image.random_contrast(image_saturized, MIN_CONTRAST, MAX_CONTRAST)
+    image_flipperized = tf.image.random_flip_left_right(image_huerized)
 
     brightness_min = 1.0 - (MAX_DELTA_BRIGHTNESS / 100)
     brightness_max = 1.0 - (MAX_DELTA_BRIGHTNESS / 100)
@@ -244,63 +254,72 @@ def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
 
 '''     TRAINING SCRIPT     '''
 
-architecture = {'conv1': [16, 3, 3, 3, 1, 1], 'pool1': [2, 2, 2, 0],    # output shape 104
-                'conv2': [32, 16, 3, 3, 1, 1], 'pool2': [2, 2, 2, 0],    # output shape 52
-                'conv3': [64, 32, 3, 3, 1, 1], 'pool3': [2, 2, 2, 0],    # output shape 26
-                'conv4': [128, 64, 3, 3, 1, 1], 'pool4': [2, 2, 2, 0],   # output shape 13
-                'conv5': [256, 128, 3, 3, 1, 1],
-                'full':  [13*13*256, 2]
+architecture = {'conv1': [16, 3, 3, 3, 1, 1], 'pool1': [2, 2, 2, 0],    # output shape 208
+                'conv2': [32, 16, 3, 3, 1, 1], 'pool2': [2, 2, 2, 0],   # output shape 104
+                'conv3': [32, 32, 3, 3, 1, 1], 'pool3': [2, 2, 2, 0],   # output shape 52
+                'conv4': [64, 32, 3, 3, 1, 1], 'pool4': [2, 2, 2, 0],  # output shape 26
+                'conv5': [64, 64, 3, 3, 1, 1], 'pool5': [2, 2, 2, 0], # output shape 13
+                'conv6': [128, 64, 3, 3, 1, 1],
+                'full1': [13*13*128, 512],
+                'full2': [512, 1]
                 }
 
 # Specify where to load data and to save models and logs
 data_dir = "data\\classification"
 save_dir = "models"
 log_dir = "logs"
-
+conf = 0.50
 
 '''    TENSORFLOW TRAINGING SCRIPT   '''
 
 # Training Hyperparamaters
 
-epochs = 300
-batch_size = 160
-initital_learning_rate = 0.001
+epochs = 10000
+batch_size = 32
+pos_batch_perc = 0.25
+initial_learning_rate = 3e-5
 ending_learning_rate = 1e-5
-decay_steps = 500
+decay_steps = 7500
 power = 4
 momentum = 0.9
-weight_decay = 0.5
+weight_decay = 0.01
+pos_weight = 3.5
 epsilon = 1e-8
+test_iters = 100
 val_batch_size = 50
 test_batch_size = 50
 
 
 # Prepare data
-dataset, labels = prep_classification_data(data_dir)
+dataset, labels = prep_classification_data(data_dir, 'face')
 
 # Create them training, test and validaiton load-runners
 with tf.device('/cpu:0'):
-    val_img_batch, val_label_batch = load_data(dataset['validation'], val_batch_size, None, training=False)
-    test_img_batch, test_label_batch = load_data(dataset['test'], test_batch_size, None, training=False)
-train_img_batch, train_label_batch = load_data(dataset['train'], batch_size, epochs)
+    test_img_batch, test_label_batch = load_data(dataset['test'], test_batch_size, pos_batch_perc, training=False)
+    val_img_batch, val_label_batch = load_data(dataset['validation'], val_batch_size, pos_batch_perc, training=False)
+train_img_batch, train_label_batch = load_data(dataset['train'], batch_size, pos_batch_perc)
 
 # Constructing the face_rec graph
 inp_placeholder = tf.placeholder(tf.float32, shape=[None, 3, RES, RES])
 training_placeholder = tf.placeholder(tf.bool)
-fac_rec_preds = nn.create_facial_rec(inp_placeholder, architecture, training=training_placeholder)
+keep_prob = tf.placeholder(tf.float32)
+fac_rec_preds, layer = nn.create_facial_rec(inp_placeholder, architecture, keep_prob, training=training_placeholder)
 
 # Calculate loss using cross entropy
 ground_truth_placeholder = tf.placeholder(tf.int32)
 with tf.name_scope('loss'):
-    cross_entropy_mean = tf.reduce_mean(
-        tf.nn.softmax_cross_entropy_with_logits_v2(labels=ground_truth_placeholder, logits=fac_rec_preds))
-tf.summary.scalar('loss', cross_entropy_mean)
+    loss = tf.nn.weighted_cross_entropy_with_logits(tf.cast(ground_truth_placeholder, dtype=tf.float32),
+                                                    fac_rec_preds, pos_weight=pos_weight)
+    l2_reg = tf.reduce_sum([tf.nn.l2_loss(w) for w in tf.trainable_variables()
+                            if 'bias' not in w.name])
+    l2_loss = tf.reduce_mean(loss) + weight_decay * l2_reg
+#tf.summary.scalar('loss', loss)
 
 
 with tf.name_scope('training'):
 
     # Decay the learning rate
-    learning_rate = tf.convert_to_tensor(initital_learning_rate, dtype=tf.float32)
+    learning_rate = tf.convert_to_tensor(initial_learning_rate, dtype=tf.float32)
     global_step = tf.placeholder(tf.float32)
     decay_steps = tf.convert_to_tensor(decay_steps, dtype=tf.float32)
     ending_learning_rate = tf.convert_to_tensor(ending_learning_rate, dtype=tf.float32)
@@ -311,24 +330,28 @@ with tf.name_scope('training'):
                    tf.pow((1 - global_decay / decay_steps), power) + \
                    ending_learning_rate
 
+    '''
     # Get optimizer and gradients
     optimizer = tf.train.MomentumOptimizer(decayed_rate, momentum=momentum)
-    gradients, variables = zip(*optimizer.compute_gradients(cross_entropy_mean))
+    gradients, variables = zip(*optimizer.compute_gradients(l2_loss))
 
     # Clip gradients to prevent exploding
-    #gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
+    #gradients, _ = tf.clip_by_global_norm(gradients, 5.0)
     gradients = [tf.where(tf.is_nan(grad), tf.zeros_like(grad), grad) if grad is not None
                  else grad for grad in gradients]
 
     # Apply gradients
     train_step = optimizer.apply_gradients(zip(gradients, variables))
+    '''
+    train_step = tf.train.AdamOptimizer(initial_learning_rate).minimize(l2_loss)
 
 
 with tf.name_scope('accuracy'):
     # Calculate Accuracy
-    correct_prediction = tf.equal(tf.argmax(fac_rec_preds, 1), tf.argmax(ground_truth_placeholder, 1))
+    logits = tf.where(fac_rec_preds > conf, tf.ones_like(fac_rec_preds), tf.zeros_like(fac_rec_preds))
+    correct_prediction = tf.equal(tf.round(fac_rec_preds),
+                                  tf.cast(ground_truth_placeholder, dtype=tf.float32))
     num_correct = tf.reduce_sum(tf.cast(correct_prediction, tf.float32))
-accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
 # Creates saver and merged summaries
 saver = tf.train.Saver()
@@ -360,52 +383,60 @@ with tf.Session() as sess:
         if e % 100 == 0:
             # Run test against validation dataset
             val_correct = 0.
+            val_error = 0.
             print('\n\033[93mgetting validation accuracy...')
-            for _ in range(int(4000/test_batch_size)):
+            for _ in range(test_iters):
                 val_batch, val_lbl_keys = sess.run((val_img_batch, val_label_batch))
-                val_lbls = [labels['validation'][l.decode()] for l in val_lbl_keys]
-                val_correct += sess.run(num_correct, feed_dict={inp_placeholder: val_batch,
-                                                               training_placeholder: False,
-                                                               ground_truth_placeholder: val_lbls})
-            print("\033[93m%d/%d correct on validation" % (val_correct, val_batch_size*int(4000/test_batch_size)))
+                val_lbls = [labels[l.decode()] for l in val_lbl_keys]
+                correct, error= sess.run([num_correct, l2_loss], feed_dict={inp_placeholder: val_batch,
+                                                                            training_placeholder: False,
+                                                                            keep_prob: 1.0,
+                                                                            ground_truth_placeholder: val_lbls})
+                val_correct += correct
+                val_error += error
+            print("\033[93m%d/%d correct on validation\terror: %f" % (val_correct,
+                                                                      val_batch_size*test_iters,
+                                                                      tf.reduce_mean(val_error).eval()))
             #test_writer.add_summary(summary, global_step=(e*num_val_batches + vb))
-            print("\033[93mtraining accuracy: %g" % (val_correct / (val_batch_size*int(4000/test_batch_size))))
+            print("\033[93mtraining accuracy: %g" % (val_correct / (val_batch_size*test_iters)))
 
             if e % 500 == 0 and e != 0:
                 # Save checkpoint
                 print("\033[93mSaving checkpoint...")
-                save_path = os.path.join(save_dir, "conv6_208_%g.ckpt" % val_correct)
+                save_path = os.path.join(save_dir, "conv6_416_%g.ckpt" % val_correct)
                 saver.save(sess, save_path)
 
         # Run training step
         train_batch, train_lbl_keys = sess.run((train_img_batch, train_label_batch))
-        train_lbls = [labels['train'][l.decode()] for l in train_lbl_keys]
-        summary, _ = sess.run([merged, train_step], feed_dict={inp_placeholder: train_batch,
+        train_lbls = [labels[l.decode()] for l in train_lbl_keys]
+        summary, maps, _ = sess.run([merged, layer, train_step], feed_dict={inp_placeholder: train_batch,
                                                                training_placeholder: True,
+                                                               keep_prob: 0.5,
                                                                ground_truth_placeholder: train_lbls,
                                                                global_step: e})
         print("\r\033[0m%d/%d training steps.." % (e+1, epochs), end='')
-        train_writer.add_summary(summary, global_step=e)
+        #train_writer.add_summary(summary, global_step=e)
 
     # Run against test dataset
     print("\n\033[94mrunning test accuracy..")
-    num_test_batches = int(len(dataset['test']) / test_batch_size)
     test_correct = 0
-    for _ in range(num_test_batches):
+    for _ in range(test_iters):
         test_batch, test_lbl_keys = sess.run((test_img_batch, test_label_batch))
-        test_lbls = [labels['test'][l.decode()] for l in test_lbl_keys]
+        test_lbls = [labels[l.decode()] for l in test_lbl_keys]
         test_correct += num_correct.eval(
             feed_dict={inp_placeholder: test_batch,
                        training_placeholder: False,
+                       keep_prob: 1.0,
                        ground_truth_placeholder: test_lbls})
-    test_accuracy = test_correct / float(num_test_batches*test_batch_size)
+    test_accuracy = test_correct / float(test_iters*test_batch_size)
     print("\033[94mtest accuracy: %g" % test_accuracy)
 
     # Save end
     print("\033[93mSaving final train run..")
-    save_path = os.path.join(save_dir, "conv6_208_%g.ckpt" % test_accuracy)
+    save_path = os.path.join(save_dir, "conv6_416_%g.ckpt" % test_accuracy)
     saver.save(sess, save_path)
 
+    # join test threads
     coord.request_stop()
     coord.join(threads)
 

@@ -376,3 +376,8 @@ def normalize(inp, epsilon=1e-8):
     variance = np.mean(inp_minus_mean * inp_minus_mean, axis=(2, 3)).reshape(-1, 3, 1, 1)
     inv_std = 1 / np.sqrt(variance + epsilon)
     return inp_minus_mean * inv_std
+
+
+def show_maps(maps):
+    pass
+

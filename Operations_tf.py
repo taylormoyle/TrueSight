@@ -179,7 +179,7 @@ def logistic_regression(inp, label):
 
 
 def mean_square_error(inp, label):
-    return 1 / 2 * (tf.square(label - inp))
+    return (tf.square(tf.cast(label, dtype=tf.float32) - inp))
 
 
 """******************************************
@@ -430,14 +430,14 @@ def non_max_suppression(bounding_boxes, conf_threshold, IoU_threshold):
 
 def initialize_weights(params):
     FM, C, H, W, _, _ = params
-    w = tf.truncated_normal([FM, C, H, W], stddev=0.001)
+    w = tf.truncated_normal([FM, C, H, W], stddev=0.01)
     weights = tf.Variable(w, name='weights')
     bn_shape = [1, FM, 1, 1]
     beta = tf.Variable(tf.zeros(bn_shape), name='beta')
-    gamma = tf.Variable(tf.ones(bn_shape), name='gamma')
-    mean = tf.Variable(tf.zeros(bn_shape), trainable=False, name="bn_mean")
-    var = tf.Variable(tf.ones(bn_shape), trainable=False, name='bn_var')
-    return weights, beta, gamma, mean, var
+    #gamma = tf.Variable(tf.ones(bn_shape), name='gamma')
+    #mean = tf.Variable(tf.zeros(bn_shape), trainable=False, name="bn_mean")
+    #var = tf.Variable(tf.ones(bn_shape), trainable=False, name='bn_var')
+    return weights, beta, None, None, None #gamma, mean, var
 
 def update_weights(weights, gradients, learning_rate, batch_size):
     return weights - (learning_rate / batch_size * gradients)

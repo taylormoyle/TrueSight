@@ -7,13 +7,13 @@ import random
 import glob
 import xml.etree.ElementTree as ET
 
-IMG_HEIGHT = 208
-IMG_WIDTH = 208
+IMG_HEIGHT = 416
+IMG_WIDTH = 416
 CELL_HEIGHT = 16
 CELL_WIDTH = 16
 GRID_HEIGHT = 13
 GRID_WIDTH = 13
-RES = 208
+RES = 416
 
 
 def prep_data(img_dir, xml_dir, test_percent=10, validation_percent=10):
@@ -196,6 +196,24 @@ def prep_classification_data(data_dir):
     datasets['validation'] = images[900:]
     return datasets
 
+def prep_chockpnt_data(data_dir):
+    dataset = {'face':[], 'noface':[]}
+    search_files = os.path.join(data_dir, 'groundtruth', "P1*")
+    label_files = glob.glob(search_files)
+
+    for f in label_files:
+        tree = ET.parse(f)
+        root = tree.getroot()
+        img_folder = root.attrib['name']
+        for elem in root:
+            filename = elem.get('number')
+            img_file = os.path.join(data_dir, img_folder, filename + '.jpg')
+            if len(elem) > 0:
+                dataset['face'].append(img_file)
+            else:
+                dataset['noface'].append(img_file)
+    return dataset
+
 
 def resize_img(img):
     img.thumbnail([RES, RES], Image.ANTIALIAS)
@@ -226,13 +244,12 @@ def resize_img(img):
 
 
 def process_data(data, labels, data_set, save_dir):
-    img = 0
+    j = 1
     #set_annotations_file = os.path.join(save_dir, "annotations_%s.txt" % data_set)
     #with open(set_annotations_file, 'w') as f:
-
+    num_imgs = len(data)
     for i in data:
         #f.write(i + "\n")
-        print(i)
         # load images, resize, and save resized images in save_dir
         im = Image.open(i)
         og_w, og_h = im.size
@@ -240,14 +257,17 @@ def process_data(data, labels, data_set, save_dir):
         image = Image.fromarray(img)
 
         img_folder, filename = os.path.split(i)
-        #_, img_folder = os.path.split(img_folder)
+        _, img_folder = os.path.split(img_folder)
 
         #img_save_dir = os.path.join(save_dir, img_folder)
         #if not os.path.exists(img_save_dir):
         #    os.mkdir(img_save_dir)
 
-        file_pathname = os.path.join(save_dir, filename)
+        file_pathname = os.path.join(save_dir, img_folder + filename)
         image.save(file_pathname)
+
+        print("\r%d/%d processed.." % (j, num_imgs), end='')
+        j += 1
 
         '''
         # get scaled labels and save new labels to new annotation file
@@ -295,26 +315,8 @@ def rescale_labels(x, y, box_w, box_h, img_w, img_h, pad_top, pad_left):
 
     return int(Nx), int(Ny), int(Nw), int(Nh)
 
-
-#dataset, train_labels, valtest_labels = prep_face_data('data\\wider_face_split\\wider_face_train_bbx_gt.txt', 'data\\wider_face_split\\wider_face_val_bbx_gt.txt', 'data')
-#process_data(dataset['train'], train_labels, 'train', 'data\\classification\\train\\faces')
-#process_data(dataset['test'], valtest_labels, 'test', 'data\\classification\\test\\faces')
-#process_data(dataset['validation'], valtest_labels, 'validation', 'data\\classification\\validation\\faces')
-
-#dataset = prep_classification_data('data\\lfw')
-
-#dataset = prep_classification_data('C:\\Users\\Shadow\\Downloads\\19--Couple')
-
-#dataset, _ = prep_all_face_data('data\\VOC2012\\JPEGImages', 'data\\VOC2012\\Annotations')
-
-#process_data(dataset['train'], None, 'train', 'data\\classification\\train\\faces')
-#process_data(dataset['test'], None, 'test', 'data\\classification\\test\\faces')
-#process_data(dataset['validation'], None, 'validation', 'data\\classification\\validation\\faces')
-
-
-#dataset, _ = prep_temp_noface_data('temp_pics')
-#process_data(dataset['train'], None, 'train', 'resized_temp_pics')
-#process_data(dataset['test'], None, 'test', 'resized_temp_pics')
-#process_data(dataset['validation'], None, 'validation', 'resized_temp_pics')
-
-
+data = prep_chockpnt_data('C:\\Users\\Humphrey\\Desktop\\chokepoint')
+process_data(data['face'], '', '', 'data\\classification\\face')
+print('\nface done..')
+process_data(data['noface'], '', '', 'data\\classification\\noface')
+print('\nnoface done')
