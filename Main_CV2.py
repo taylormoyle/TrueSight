@@ -1,8 +1,7 @@
 import cv2
 from tkinter import *
 import numpy as np
-from PIL import Image, ImageTk
-import Controller_CV2 as con
+import os
 
 RES = 300
 username = ""
@@ -35,7 +34,8 @@ def login():
         root.overrideredirect(1)
         root.bind('<Escape>', quit)
 
-        bg_image = PhotoImage(file='pics\\eye.gif')
+        eye_file = os.path.join('pics', 'eye.gif')
+        bg_image = PhotoImage(file=eye_file)
         w = bg_image.width()
         h = bg_image.height()
         bg_label = Label(root, image=bg_image)
@@ -70,7 +70,8 @@ def menu():
     root = Tk()
     root.bind('<Escape>', quit)
 
-    bg_image = PhotoImage(file='pics\\menu.gif')
+    menu_pic = os.path.join('pics', 'menu.gif')
+    bg_image = PhotoImage(file=menu_pic)
     w = bg_image.width()
     h = bg_image.height()
     bg_label = Label(root, image=bg_image)
@@ -80,6 +81,13 @@ def menu():
 
     def close_window():
         root.destroy()
+
+    scrollbar = Scrollbar(root)
+    scrollbar.grid(column=5, row=0, sticky=N + S, pady=10, rowspan=7)
+    list_users = Listbox(root, yscrollcommand=scrollbar.set)
+    list_users.grid(column=0, row=0, padx=10, pady=10, rowspan=7, columnspan=4)
+    list_users.config(width=35, height=26)
+    scrollbar.config(command=list_users.yview)
 
     root.protocol("WM_DELETE_WINDOW", close_window)
     root.mainloop()
