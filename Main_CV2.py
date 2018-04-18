@@ -1,9 +1,8 @@
 import cv2
 from tkinter import *
-import time
+import os
+import time as t
 import numpy as np
-from PIL import Image, ImageTk
-import Controller_CV2 as con
 
 RES = 300
 username = ""
@@ -33,10 +32,11 @@ def login():
             return username, password
 
         root = Tk()
-        root.overrideredirect(1)
+        #root.overrideredirect(1)
         root.bind('<Escape>', quit)
 
-        bg_image = PhotoImage(file='pics\\eye.gif')
+        eye_file = os.path.join('pics', 'eye.gif')
+        bg_image = PhotoImage(file=eye_file)
         w = bg_image.width()
         h = bg_image.height()
         bg_label = Label(root, image=bg_image)
@@ -71,7 +71,8 @@ def menu():
     root = Tk()
     root.bind('<Escape>', quit)
 
-    bg_image = PhotoImage(file='pics\\menu.gif')
+    menu_pic = os.path.join('pics', 'menu.gif')
+    bg_image = PhotoImage(file=menu_pic)
     w = bg_image.width()
     h = bg_image.height()
     bg_label = Label(root, image=bg_image)
@@ -98,16 +99,28 @@ def menu():
         entry_name.grid(column=1, row=0, padx=20)
         entry_name.bind('<Return>', (lambda event: update(entry_name, toplevel)))
 
+    def delete_user():
+        selected = list_users.curselection()
+        if selected:
+            username = list_users.get(selected[0])
+            filename = os.path.join('users', username + '.png')
+            os.remove(filename)
+            list_users.delete(selected[0], selected[-1])
+
     scrollbar = Scrollbar(root)
     scrollbar.grid(column=5, row=0, sticky=N+S, pady=10, rowspan=7)
     list_users = Listbox(root, yscrollcommand=scrollbar.set)
     list_users.grid(column=0, row=0, padx=10, pady=10, rowspan=7, columnspan=4)
-    list_users.config(width=65, height=26)
+    list_users.config(width=35, height=26)
     scrollbar.config(command=list_users.yview)
 
     btn_add = Button(root, text='Add', width=12, command=lambda: add_user())
     btn_add.configure(background='black', foreground='white')
     btn_add.grid(column=6, row=0, padx=35, pady=10)
+
+    btn_delete = Button(root, text='Delete', width=12, command=lambda: delete_user())
+    btn_delete.configure(background='black', foreground='white')
+    btn_delete.grid(column=6, row=1, padx=35, pady=10)
 
     root.protocol("WM_DELETE_WINDOW", close_window)
     root.mainloop()
@@ -131,10 +144,12 @@ def display_video(mode, name):
 
         if cv2.waitKey(1) & 0xFF == ord('s'):
             if mode == 'add_user':
-                cv2.imwrite('users\\' + name + '.png', resized_frame)
+                filename = os.path.join('users', name + '.png')
+                cv2.imwrite(filename, resized_frame)
                 break
             else:
-                cv2.imwrite('frames\\' + (time.time()*1000) + '.png', resized_frame)
+                filename = os.path.join('frames', (t.time()*1000) + '.png')
+                cv2.imwrite(filename, resized_frame)
                 break
 
         '''
@@ -150,4 +165,3 @@ def display_video(mode, name):
 
 login()
 menu()
-
