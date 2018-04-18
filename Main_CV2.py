@@ -108,10 +108,10 @@ def menu():
             list_users.delete(selected[0], selected[-1])
 
     scrollbar = Scrollbar(root)
-    scrollbar.grid(column=5, row=0, sticky=N+S, pady=10, rowspan=7)
+    scrollbar.grid(column=5, row=0, sticky=N + S, pady=10, rowspan=7)
     list_users = Listbox(root, yscrollcommand=scrollbar.set)
     list_users.grid(column=0, row=0, padx=10, pady=10, rowspan=7, columnspan=4)
-    list_users.config(width=35, height=26)
+    list_users.config(width=65, height=26)
     scrollbar.config(command=list_users.yview)
 
     btn_add = Button(root, text='Add', width=12, command=lambda: add_user())
