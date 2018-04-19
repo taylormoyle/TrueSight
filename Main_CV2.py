@@ -8,6 +8,16 @@ RES = 300
 username = ""
 password = ""
 
+video_size = 960.0
+screen_width = 0
+screen_height = 0
+
+def set_screen_dim():
+    root = Tk()
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
+    root.destroy()
+
 
 
 # Create basic GUI with username and password capabilities
@@ -126,31 +136,64 @@ def menu():
     root.mainloop()
 
 
+def draw_crosshairs(cap, frame, color):
+        width = cap.get(3)
+        height = cap.get(4)
+        line_length = 50
+        cv2.line(frame, (int(width / 3.5), int(height / 5)),
+                 (int(width / 3.5) + line_length, int(height / 5)), color, 2)
+        cv2.line(frame, (int(width - width / 3.5) - line_length, int(height / 5)),
+                 (int(width - width / 3.5), int(height / 5)), color, 2)
+        cv2.line(frame, (int(width / 3.5), int(height - height / 5)),
+                 (int(width / 3.5) + line_length, int(height-height / 5)), color, 2)
+        cv2.line(frame, (int(width - width / 3.5) - line_length, int(height-height / 5)),
+                 (int(width - width / 3.5), int(height-height / 5)), color, 2)
+
+        cv2.line(frame, (int(width / 3.5), int(height / 5)),
+                 (int(width / 3.5), int(height / 5) + line_length), color, 2)
+        cv2.line(frame, (int(width - width / 3.5), int(height / 5)),
+                 (int(width - width / 3.5), int(height / 5) + line_length), color, 2)
+        cv2.line(frame, (int(width / 3.5), int(height - height / 5)),
+                 (int(width / 3.5), int(height - height / 5) - line_length), color, 2)
+        cv2.line(frame, (int(width - width / 3.5), int(height - height / 5)),
+                 (int(width - width / 3.5), int(height - height / 5) - line_length), color, 2)
+
 # capture video feed, frame by frame
-def display_video(mode, name):
+def display_video(mode='normal', name=None):
     cap = cv2.VideoCapture(0)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, video_size)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, video_size)
     success = True
     shrug = cv2.imread('pics\\shrug.png')
     i = 0
+    initial = True
+
     while success:
         success, frame = cap.read()  # frame (640 x 480)
         resized_frame = cv2.resize(frame, (RES, RES), interpolation=cv2.INTER_AREA)
 
+        color = (0, 0, 255)
+        draw_crosshairs(cap, frame, color)
         cv2.imshow('TrueSight', frame)
-        cv2.moveWindow('TrueSight', 800, 450)
+        if initial:
+            cv2.moveWindow('TrueSight', 800, 450)
+            initial = False
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        key = cv2.waitKey(1)
+
+        # Quit video feed
+        if key & 0xFF == ord('q'):
             break
 
-        if cv2.waitKey(1) & 0xFF == ord('s'):
+        # Take a picture
+        if key & 0xFF == ord('s'):
             if mode == 'add_user':
                 filename = os.path.join('users', name + '.png')
-                cv2.imwrite(filename, resized_frame)
+                cv2.imwrite(filename, frame)
                 break
             else:
-                filename = os.path.join('frames', (t.time()*1000) + '.png')
-                cv2.imwrite(filename, resized_frame)
-                break
+                filename = os.path.join('frames', str(t.time()*1000) + '.png')
+                cv2.imwrite(filename, frame)
 
         '''
          if np.argmax(prediction) == 0:
@@ -163,5 +206,7 @@ def display_video(mode, name):
     cv2.destroyAllWindows()
 
 
+set_screen_dim()
 login()
 menu()
+display_video()
