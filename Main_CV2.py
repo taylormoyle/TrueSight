@@ -1,23 +1,29 @@
 import cv2
 from tkinter import *
 import os
-import time as t
+import time
 import numpy as np
 
 RES = 300
 username = ""
 password = ""
-
 video_size = 960.0
-screen_width = 0
-screen_height = 0
+conf_threshold = 0.5
+
+# files for the model
+prototxt = 'models\\deploy.prototxt.txt'
+model = 'models\\nn.caffemodel'
+
+# load the model
+net = cv2.dnn.readNetFromCaffe(prototxt, model)
+
 
 def set_screen_dim():
     root = Tk()
     screen_width = root.winfo_screenwidth()
     screen_height = root.winfo_screenheight()
     root.destroy()
-
+    return screen_width, screen_height
 
 
 # Create basic GUI with username and password capabilities
@@ -27,6 +33,7 @@ def login():
 
         def close_window():
             root.destroy()
+            root.quit()
 
         def retrieve_user_input():
             global username
@@ -42,7 +49,7 @@ def login():
             return username, password
 
         root = Tk()
-        #root.overrideredirect(1)
+        root.overrideredirect(1)
         root.bind('<Escape>', quit)
 
         eye_file = os.path.join('pics', 'eye.gif')
@@ -68,7 +75,10 @@ def login():
         entry_password.pack(anchor=S, side=LEFT)
         btn_submit = Button(root, text='Submit', width=15, command=lambda: retrieve_user_input())
         btn_submit.configure(background='black', foreground='white')
-        btn_submit.pack(anchor=S, side=RIGHT)
+        btn_submit.pack(anchor=S, side=LEFT)
+        btn_quit = Button(root, text='Quit', width=15, command=lambda: quit())
+        btn_quit.configure(background='black', foreground='white')
+        btn_quit.pack(anchor=S, side=RIGHT)
 
         #root.bind('<Return>', (lambda event: retrieve_user_input()))
         #root.bind('<Tab>', (lambda event: entry_password.focus_set()))
@@ -87,7 +97,7 @@ def menu():
     h = bg_image.height()
     bg_label = Label(root, image=bg_image)
     bg_label.place(x=0, y=0, relwidth=1, relheight=1)
-    root.wm_geometry("%dx%d+800+450" % (w, h))
+    root.wm_geometry("%dx%d+70+450" % (w, h))
     root.title('TrueSight')
 
     def close_window():
@@ -98,6 +108,8 @@ def menu():
         list_users.insert(END, name)
         entry_name.delete(0, last=len(name))
         toplevel.destroy()
+        root.destroy()
+        root.quit()
         display_video(mode='add_user', name=name)
 
     def add_user():
@@ -158,42 +170,92 @@ def draw_crosshairs(cap, frame, color):
         cv2.line(frame, (int(width - width / 3.5), int(height - height / 5)),
                  (int(width - width / 3.5), int(height - height / 5) - line_length), color, 2)
 
-# capture video feed, frame by frame
+
+# Capture video feed, frame by frame
 def display_video(mode='normal', name=None):
+    frame_width = 0
+    frame_height = 0
     cap = cv2.VideoCapture(0)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, video_size)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, video_size)
     success = True
-    shrug = cv2.imread('pics\\shrug.png')
-    i = 0
     initial = True
 
     while success:
-        success, frame = cap.read()  # frame (640 x 480)
-        resized_frame = cv2.resize(frame, (RES, RES), interpolation=cv2.INTER_AREA)
-
-        color = (0, 0, 255)
-        draw_crosshairs(cap, frame, color)
-        cv2.imshow('TrueSight', frame)
         if initial:
-            cv2.moveWindow('TrueSight', 800, 450)
+            cv2.moveWindow('TrueSight', int((screen_width - video_size) / 2), int((screen_height - video_size) / 2))
             initial = False
+        success, frame = cap.read()  # frame (640 x 480)
+        frame_width = frame.shape[1]
+        frame_height = frame.shape[0]
+        og_frame = frame.copy()
+        if mode == 'add_user':
+            crosshair_color = (0, 0, 255)
+            draw_crosshairs(cap, frame, crosshair_color)
+        resized_frame = cv2.resize(frame, (RES, RES))
 
-        key = cv2.waitKey(1)
+        # Get the mean of the frame and convert to blob
+        mean = np.mean(frame, axis=(0, 1))
+        blob = cv2.dnn.blobFromImage(resized_frame, 1.0, (RES, RES), mean)
+
+        # Set frame (blob) as input to network and get detections
+        net.setInput(blob)
+        detections = net.forward()
+
+        # Loop over the detections
+        for i in range(0, detections.shape[2]):
+            confidence = detections[0, 0, i, 2]
+
+            # Ignore ones with conf below threshold
+            if confidence < conf_threshold:
+                continue
+
+            # Get bounding box dims with respect to original frame
+            box = detections[0, 0, i, 3:7] * np.array([frame_width, frame_height,
+                                                       frame_width, frame_height])
+            x1, y1, x2, y2 = box.astype("int")
+
+            # Draw the bounding box and confidence level
+            confidence_level = "%.2f" % (confidence * 100)
+            y = y1 - 10 if y1 - 10 > 10 else y1 + 10
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+            cv2.putText(frame, confidence_level, (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
+
+        # Legend
+        cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 150), 1)
+        cv2.putText(frame, "s: Save", (frame_width - 80, 35), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 150), 1)
+        cv2.putText(frame, "q: Quit", (frame_width - 80, 55), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 150), 1)
+
+        if mode == 'add_user':
+            cv2.putText(frame, "Position desired face in center of cross-hairs",
+                        (int(frame_width / 4), frame_height - 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (0, 255, 0), 1)
+
+        cv2.imshow('TrueSight', frame)
 
         # Quit video feed
+        key = cv2.waitKey(1)
         if key & 0xFF == ord('q'):
-            break
+            if mode == 'add_user':
+                display_video()
+            else:
+                break
+
+        # Open Menu
+        if mode == 'normal':
+            if key & 0xFF == ord('e'):
+                cv2.destroyAllWindows()
+                menu()
+                break
 
         # Take a picture
         if key & 0xFF == ord('s'):
             if mode == 'add_user':
                 filename = os.path.join('users', name + '.png')
-                cv2.imwrite(filename, frame)
+                cv2.imwrite(filename, og_frame)
                 break
             else:
-                filename = os.path.join('frames', str(t.time()*1000) + '.png')
-                cv2.imwrite(filename, frame)
+                filename = os.path.join('frames', str(time.time()*1000) + '.png')
+                cv2.imwrite(filename, og_frame)
 
         '''
          if np.argmax(prediction) == 0:
@@ -202,11 +264,13 @@ def display_video(mode='normal', name=None):
                      frame[425+j][500+i] = shrug[j][i]
          '''
 
+
+    # Clean up
     cap.release()
     cv2.destroyAllWindows()
+    # vs.stop
 
 
-set_screen_dim()
-login()
-menu()
+screen_width, screen_height = set_screen_dim()
+# login()
 display_video()
