@@ -129,6 +129,11 @@ def menu():
             os.remove(filename)
             list_users.delete(selected[0], selected[-1])
 
+    def run_video():
+        root.quit()
+        root.destroy()
+        display_video()
+
     scrollbar = Scrollbar(root)
     scrollbar.grid(column=5, row=0, sticky=N + S, pady=10, rowspan=7)
     list_users = Listbox(root, yscrollcommand=scrollbar.set)
@@ -143,6 +148,10 @@ def menu():
     btn_delete = Button(root, text='Delete', width=12, command=lambda: delete_user())
     btn_delete.configure(background='black', foreground='white')
     btn_delete.grid(column=6, row=1, padx=35, pady=10)
+
+    btn_video = Button(root, text='Video', width=12, command=lambda: run_video())
+    btn_video.configure(background='black', foreground='white')
+    btn_video.grid(column=6, row=3, padx=35, pady=10)
 
     root.protocol("WM_DELETE_WINDOW", close_window)
     root.mainloop()
@@ -227,8 +236,8 @@ def display_video(mode='normal', name=None):
         cv2.putText(frame, "q: Quit", (frame_width - 80, 55), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 150), 1)
 
         if mode == 'add_user':
-            cv2.putText(frame, "Position desired face in center of cross-hairs",
-                        (int(frame_width / 4), frame_height - 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (0, 255, 0), 1)
+            cv2.putText(frame, "Position desired face in center of cross-hairs and press 'S'",
+                        (int(frame_width / 5), frame_height - 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (100, 255, 0), 1)
 
         cv2.imshow('TrueSight', frame)
 
@@ -252,6 +261,8 @@ def display_video(mode='normal', name=None):
             if mode == 'add_user':
                 filename = os.path.join('users', name + '.png')
                 cv2.imwrite(filename, og_frame)
+                cv2.destroyAllWindows()
+                menu()
                 break
             else:
                 filename = os.path.join('frames', str(time.time()*1000) + '.png')
