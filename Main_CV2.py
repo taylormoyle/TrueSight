@@ -3,6 +3,7 @@ from tkinter import *
 import os
 import time
 import numpy as np
+import glob
 
 RES = 300
 username = ""
@@ -26,64 +27,17 @@ def set_screen_dim():
     return screen_width, screen_height
 
 
+def close_window(window):
+    window.destroy()
+    window.quit()
+
+
 # Create basic GUI with username and password capabilities
 def login():
     error_text = "Enter correct ADMIN credentials..."
     while not (username == 'admin' and password == 'admin'):
 
-        def close_window():
-            root.destroy()
-            root.quit()
-
-        def retrieve_user_input():
-            global username
-            username = entry_username.get("1.0", "end-1c")
-            global password
-            password = entry_password.get("1.0", "end-1c")
-            if username == 'admin' and password == 'admin':
-                root.destroy()
-            else:
-                error = Toplevel()
-                lbl_error = Label(error, text=error_text, height=0, width=40)
-                lbl_error.pack()
-            return username, password
-
-        root = Tk()
-        root.overrideredirect(1)
-        root.bind('<Escape>', quit)
-
-        eye_file = os.path.join('pics', 'eye.gif')
-        bg_image = PhotoImage(file=eye_file)
-        w = bg_image.width()
-        h = bg_image.height()
-        bg_label = Label(root, image=bg_image)
-        bg_label.place(x=0, y=0, relwidth=1, relheight=1)
-        root.wm_geometry("%dx%d+800+450" % (w, h))
-        root.title('TrueSight')
-
-        lbl_username = Label(root, text='Username: ')
-        lbl_username.configure(background='black', foreground='white')
-        lbl_username.pack(anchor=S, side=LEFT)
-        entry_username = Text(root, height=1, width=10)
-        entry_username.configure(background='black', foreground='white')
-        entry_username.pack(anchor=S, side=LEFT)
-        lbl_password = Label(root, text='Password: ')
-        lbl_password.configure(background='black', foreground='white')
-        lbl_password.pack(anchor=S, side=LEFT)
-        entry_password = Text(root, height=1, width=10)
-        entry_password.configure(background='black', foreground='white')
-        entry_password.pack(anchor=S, side=LEFT)
-        btn_submit = Button(root, text='Submit', width=15, command=lambda: retrieve_user_input())
-        btn_submit.configure(background='black', foreground='white')
-        btn_submit.pack(anchor=S, side=LEFT)
-        btn_quit = Button(root, text='Quit', width=15, command=lambda: quit())
-        btn_quit.configure(background='black', foreground='white')
-        btn_quit.pack(anchor=S, side=RIGHT)
-
-        #root.bind('<Return>', (lambda event: retrieve_user_input()))
-        #root.bind('<Tab>', (lambda event: entry_password.focus_set()))
-        #entry_username.focus_set()
-        root.protocol("WM_DELETE_WINDOW", close_window)
+        root.protocol("WM_DELETE_WINDOW", (lambda: close_window(root)))
         root.mainloop()
 
 
@@ -100,16 +54,19 @@ def menu():
     root.wm_geometry("%dx%d+70+450" % (w, h))
     root.title('TrueSight')
 
-    def close_window():
-        root.destroy()
+    def update_list(user_list):
+        filenames = os.path.join('users', '*.png')
+        current_users = glob.glob(filenames)
+        current_list_box = user_list.get(0, user_list.size())
+        for user in current_users:
+            _, filename = os.path.split(user)
+            if not filename[: -4] in current_list_box:
+                user_list.insert(END, filename[: -4])
 
-    def update(entry_name, toplevel):
+    def add_callback(entry_name, toplevel):
         name = entry_name.get()
-        list_users.insert(END, name)
-        entry_name.delete(0, last=len(name))
-        toplevel.destroy()
-        root.destroy()
-        root.quit()
+        close_window(toplevel)
+        close_window(root)
         display_video(mode='add_user', name=name)
 
     def add_user():
@@ -119,15 +76,16 @@ def menu():
         lbl_name.grid(column=0, row=0)
         entry_name = Entry(toplevel, width=20)
         entry_name.grid(column=1, row=0, padx=20)
-        entry_name.bind('<Return>', (lambda event: update(entry_name, toplevel)))
+        entry_name.focus_set()
+        entry_name.bind('<Return>', (lambda event: add_callback(entry_name, toplevel)))
 
     def delete_user():
-        selected = list_users.curselection()
+        selected = user_list.curselection()
         if selected:
-            username = list_users.get(selected[0])
+            username = user_list.get(selected[0])
             filename = os.path.join('users', username + '.png')
             os.remove(filename)
-            list_users.delete(selected[0], selected[-1])
+            user_list.delete(selected[0], selected[-1])
 
     def run_video():
         root.quit()
@@ -136,10 +94,12 @@ def menu():
 
     scrollbar = Scrollbar(root)
     scrollbar.grid(column=5, row=0, sticky=N + S, pady=10, rowspan=7)
-    list_users = Listbox(root, yscrollcommand=scrollbar.set)
-    list_users.grid(column=0, row=0, padx=10, pady=10, rowspan=7, columnspan=4)
-    list_users.config(width=65, height=26)
-    scrollbar.config(command=list_users.yview)
+    user_list = Listbox(root, yscrollcommand=scrollbar.set)
+    user_list.grid(column=0, row=0, padx=10, pady=10, rowspan=7, columnspan=4)
+    user_list.config(width=65, height=26)
+    scrollbar.config(command=user_list.yview)
+
+    update_list(user_list)
 
     btn_add = Button(root, text='Add', width=12, command=lambda: add_user())
     btn_add.configure(background='black', foreground='white')
@@ -151,9 +111,10 @@ def menu():
 
     btn_video = Button(root, text='Video', width=12, command=lambda: run_video())
     btn_video.configure(background='black', foreground='white')
-    btn_video.grid(column=6, row=3, padx=35, pady=10)
+    btn_video.grid(column=6, row=5, padx=35, pady=10)
 
-    root.protocol("WM_DELETE_WINDOW", close_window)
+    root.protocol("WM_DELETE_WINDOW", (lambda: close_window(root)))
+
     root.mainloop()
 
 
@@ -279,9 +240,8 @@ def display_video(mode='normal', name=None):
     # Clean up
     cap.release()
     cv2.destroyAllWindows()
-    # vs.stop
 
 
 screen_width, screen_height = set_screen_dim()
-# login()
+login()
 display_video()
