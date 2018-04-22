@@ -37,6 +37,54 @@ def login():
     error_text = "Enter correct ADMIN credentials..."
     while not (username == 'admin' and password == 'admin'):
 
+        def retrieve_user_input():
+            global username
+            username = entry_username.get("1.0", "end-1c")
+            global password
+            password = entry_password.get("1.0", "end-1c")
+            if username == 'admin' and password == 'admin':
+                root.destroy()
+            else:
+                error = Toplevel()
+                lbl_error = Label(error, text=error_text, height=0, width=40)
+                lbl_error.pack()
+            return username, password
+
+        root = Tk()
+        root.overrideredirect(1)
+        root.bind('<Escape>', quit)
+
+        eye_file = os.path.join('pics', 'eye.gif')
+        bg_image = PhotoImage(file=eye_file)
+        w = bg_image.width()
+        h = bg_image.height()
+        bg_label = Label(root, image=bg_image)
+        bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+        root.wm_geometry("%dx%d+700+400" % (w, h))
+        root.title('TrueSight')
+
+        lbl_username = Label(root, text='Username: ')
+        lbl_username.configure(background='black', foreground='white')
+        lbl_username.pack(anchor=S, side=LEFT)
+        entry_username = Text(root, height=1, width=10)
+        entry_username.configure(background='black', foreground='white', insertbackground='white')
+        entry_username.pack(anchor=S, side=LEFT)
+        lbl_password = Label(root, text='Password: ')
+        lbl_password.configure(background='black', foreground='white')
+        lbl_password.pack(anchor=S, side=LEFT)
+        entry_password = Text(root, height=1, width=10)
+        entry_password.configure(background='black', foreground='white', insertbackground='white')
+        entry_password.pack(anchor=S, side=LEFT)
+        btn_submit = Button(root, text='Submit', width=15, command=lambda: retrieve_user_input())
+        btn_submit.configure(background='black', foreground='white')
+        btn_submit.pack(anchor=S, side=LEFT)
+        btn_quit = Button(root, text='Quit', width=15, command=lambda: quit())
+        btn_quit.configure(background='black', foreground='white')
+        btn_quit.pack(anchor=S, side=RIGHT)
+
+        entry_username.focus_set()
+        #root.bind('<Return>', (lambda event: retrieve_user_input()))
+        #root.bind('<Tab>', (lambda event: entry_password.focus_set()))
         root.protocol("WM_DELETE_WINDOW", (lambda: close_window(root)))
         root.mainloop()
 
@@ -240,8 +288,9 @@ def display_video(mode='normal', name=None):
     # Clean up
     cap.release()
     cv2.destroyAllWindows()
+    # vs.stop
 
 
 screen_width, screen_height = set_screen_dim()
-login()
+#login()
 display_video()
