@@ -265,30 +265,20 @@ def col_to_img(col, inp_shape, f_h, f_w, o_h, o_w, pad, stride):
     return img[:, :, pad:-pad, pad:-pad]
 
 
-def intersection_over_union(box1, box2, box1_cell, box2_cell, img_width, img_height):
-    I = _find_intersection(box1, box2, box1_cell, box2_cell, img_width, img_height)
-    U = (box1[3] * box1[4] + box2[3] * box2[4]) - I
+def intersection_over_union(box1, box2):
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[2], box2[2])
+    y2 = min(box1[3], box2[3])
+
+    I = (x2 - x1) * (y2 - y1)
+
+    b1_area = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    b2_area = (box2[2] - box2[0]) * (box2[3] - box2[1])
+
+    U = b1_area + b2_area - I
+
     return I / U
-
-
-def _find_intersection(box1, box2, box1_cell, box2_cell, width, height):
-    TL1, TR1, BL1, BR1 = _find_corners(box1, box1_cell)
-    b1 = np.zeros((height, width))
-    b1x1 = TL1[1]
-    b1x2 = TR1[1]
-    b1y1 = TL1[0]
-    b1y2 = BL1[0]
-    b1[b1y1:b1y2, b1x1:b1x2] = 1
-
-    TL2, TR2, BL2, BR2 = _find_corners(box2, box2_cell)
-    b2 = np.zeros((height, width))
-    b2x1 = TL2[1]
-    b2x2 = TR2[1]
-    b2y1 = TL2[0]
-    b2y2 = BL2[0]
-    b2[b2y1:b2y2, b2x1:b2x2] = 1
-
-    return np.sum(b1 * b2)
 
 
 def _find_corners(box, cell):
