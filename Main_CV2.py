@@ -203,7 +203,7 @@ def display_video(mode='normal', name=None):
 
     while success:
         if initial:
-            #cv2.moveWindow('TrueSight', int((screen_width - video_size) / 2), int((screen_height - video_size) / 2))
+            cv2.moveWindow('TrueSight', int((screen_width - video_size) / 2), int((screen_height - video_size) / 2))
             initial = False
         success, frame = cap.read()
         og_frame = frame.copy()
@@ -301,5 +301,5 @@ def display_video(mode='normal', name=None):
 
 
 screen_width, screen_height = set_screen_dim()
-#login()
+login()
 display_video()
