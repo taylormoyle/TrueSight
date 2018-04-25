@@ -4,16 +4,18 @@ import os
 import time
 import numpy as np
 import glob
+from Operations import intersection_over_union as IoU
 
 RES = 300
 username = ""
 password = ""
 video_size = 960.0
-conf_threshold = 0.5
+conf_threshold = 0.7
+iou_threshold = 0.4
 
 # files for the model
-prototxt = 'models\\deploy.prototxt.txt'
-model = 'models\\nn.caffemodel'
+prototxt = os.path.join('models', 'deploy.prototxt.txt')
+model = os.path.join('models', 'nn.caffemodel')
 
 # load the model
 net = cv2.dnn.readNetFromCaffe(prototxt, model)
@@ -109,7 +111,7 @@ def menu():
         for user in current_users:
             _, filename = os.path.split(user)
             if not filename[: -4] in current_list_box:
-                user_list.insert(END, filename[: -4])
+                user_list.insert(END, filename[: -4].replace('_', ' '))
 
     def add_callback(entry_name, toplevel):
         name = entry_name.get()
@@ -130,7 +132,7 @@ def menu():
     def delete_user():
         selected = user_list.curselection()
         if selected:
-            username = user_list.get(selected[0])
+            username = user_list.get(selected[0]).replace(' ', '_')
             filename = os.path.join('users', username + '.png')
             os.remove(filename)
             user_list.delete(selected[0], selected[-1])
@@ -166,50 +168,45 @@ def menu():
     root.mainloop()
 
 
-def draw_crosshairs(cap, frame, color):
-        width = cap.get(3)
-        height = cap.get(4)
+def draw_crosshairs(frame, width, height, color, thickness):
         line_length = 50
         cv2.line(frame, (int(width / 3.5), int(height / 5)),
-                 (int(width / 3.5) + line_length, int(height / 5)), color, 2)
+                 (int(width / 3.5) + line_length, int(height / 5)), color, thickness)
         cv2.line(frame, (int(width - width / 3.5) - line_length, int(height / 5)),
-                 (int(width - width / 3.5), int(height / 5)), color, 2)
+                 (int(width - width / 3.5), int(height / 5)), color, thickness)
         cv2.line(frame, (int(width / 3.5), int(height - height / 5)),
-                 (int(width / 3.5) + line_length, int(height-height / 5)), color, 2)
+                 (int(width / 3.5) + line_length, int(height-height / 5)), color, thickness)
         cv2.line(frame, (int(width - width / 3.5) - line_length, int(height-height / 5)),
-                 (int(width - width / 3.5), int(height-height / 5)), color, 2)
+                 (int(width - width / 3.5), int(height-height / 5)), color, thickness)
 
         cv2.line(frame, (int(width / 3.5), int(height / 5)),
-                 (int(width / 3.5), int(height / 5) + line_length), color, 2)
+                 (int(width / 3.5), int(height / 5) + line_length), color, thickness)
         cv2.line(frame, (int(width - width / 3.5), int(height / 5)),
-                 (int(width - width / 3.5), int(height / 5) + line_length), color, 2)
+                 (int(width - width / 3.5), int(height / 5) + line_length), color, thickness)
         cv2.line(frame, (int(width / 3.5), int(height - height / 5)),
-                 (int(width / 3.5), int(height - height / 5) - line_length), color, 2)
+                 (int(width / 3.5), int(height - height / 5) - line_length), color, thickness)
         cv2.line(frame, (int(width - width / 3.5), int(height - height / 5)),
-                 (int(width - width / 3.5), int(height - height / 5) - line_length), color, 2)
+                 (int(width - width / 3.5), int(height - height / 5) - line_length), color, thickness)
 
 
 # Capture video feed, frame by frame
 def display_video(mode='normal', name=None):
-    frame_width = 0
-    frame_height = 0
     cap = cv2.VideoCapture(0)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, video_size)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, video_size)
+    frame_width = int(cap.get(3))
+    frame_height = int(cap.get(4))
+    crosshair_box = [int(frame_width/3.5), int(frame_height/5),
+                     int(frame_width-frame_width/3.5), int(frame_height-frame_height/5)]
     success = True
     initial = True
 
     while success:
         if initial:
-            cv2.moveWindow('TrueSight', int((screen_width - video_size) / 2), int((screen_height - video_size) / 2))
+            #cv2.moveWindow('TrueSight', int((screen_width - video_size) / 2), int((screen_height - video_size) / 2))
             initial = False
-        success, frame = cap.read()  # frame (640 x 480)
-        frame_width = frame.shape[1]
-        frame_height = frame.shape[0]
+        success, frame = cap.read()
         og_frame = frame.copy()
-        if mode == 'add_user':
-            crosshair_color = (0, 0, 255)
-            draw_crosshairs(cap, frame, crosshair_color)
         resized_frame = cv2.resize(frame, (RES, RES))
 
         # Get the mean of the frame and convert to blob
@@ -220,6 +217,8 @@ def display_video(mode='normal', name=None):
         net.setInput(blob)
         detections = net.forward()
 
+        crosshair_color = (0, 0, 255)
+        thickness = 2
         # Loop over the detections
         for i in range(0, detections.shape[2]):
             confidence = detections[0, 0, i, 2]
@@ -236,8 +235,13 @@ def display_video(mode='normal', name=None):
             # Draw the bounding box and confidence level
             confidence_level = "%.2f" % (confidence * 100)
             y = y1 - 10 if y1 - 10 > 10 else y1 + 10
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-            cv2.putText(frame, confidence_level, (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
+
+            if IoU(crosshair_box, [x1, y1, x2, y2]) > iou_threshold:
+                crosshair_color = (0, 255, 0)
+                thickness = 4
+            else:
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                cv2.putText(frame, confidence_level, (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
 
         # Legend
         cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 150), 1)
@@ -247,6 +251,8 @@ def display_video(mode='normal', name=None):
         if mode == 'add_user':
             cv2.putText(frame, "Position desired face in center of cross-hairs and press 'S'",
                         (int(frame_width / 5), frame_height - 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (100, 255, 0), 1)
+
+        draw_crosshairs(frame, frame_width, frame_height, crosshair_color, thickness)
 
         cv2.imshow('TrueSight', frame)
 
@@ -261,6 +267,7 @@ def display_video(mode='normal', name=None):
         # Open Menu
         if mode == 'normal':
             if key & 0xFF == ord('e'):
+                cap.release()
                 cv2.destroyAllWindows()
                 menu()
                 break
@@ -268,8 +275,10 @@ def display_video(mode='normal', name=None):
         # Take a picture
         if key & 0xFF == ord('s'):
             if mode == 'add_user':
-                filename = os.path.join('users', name + '.png')
+                user_name = name.replace(' ', '_')
+                filename = os.path.join('users', user_name + '.png')
                 cv2.imwrite(filename, og_frame)
+                cap.release()
                 cv2.destroyAllWindows()
                 menu()
                 break
