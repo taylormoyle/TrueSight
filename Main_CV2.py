@@ -4,7 +4,9 @@ import os
 import time
 import numpy as np
 import glob
+import dlib
 from Operations import intersection_over_union as IoU
+
 
 RES = 300
 username = ""
@@ -12,14 +14,24 @@ password = ""
 video_size = 960.0
 conf_threshold = 0.7
 iou_threshold = 0.4
+frame_width = 0
+frame_height = 0
+
+
+crosshair_box = [int(frame_width / 3.5), int(frame_height / 5),
+                     int(frame_width - frame_width / 3.5), int(frame_height - frame_height / 5)]
 
 # files for the model
-prototxt = os.path.join('models', 'deploy.prototxt.txt')
-model = os.path.join('models', 'nn.caffemodel')
+# face detector
+prototxt = os.path.join('models', 'face_detector', 'deploy.prototxt.txt')
+detection_model_file = os.path.join('models', 'face_detector', 'nn.caffemodel')
 
-# load the model
-net = cv2.dnn.readNetFromCaffe(prototxt, model)
+# landmark detector for alignment
+landmark_model_file = os.path.join('models', 'landmark_detector', 'face_landmarks.dat')
 
+# load all models
+detection_net = cv2.dnn.readNetFromCaffe(prototxt, detection_model_file)
+landmark_net = dlib.shape_predictor(landmark_model_file)
 
 def set_screen_dim():
     root = Tk()
@@ -189,17 +201,89 @@ def draw_crosshairs(frame, width, height, color, thickness):
                  (int(width - width / 3.5), int(height - height / 5) - line_length), color, thickness)
 
 
+def detect_faces(frame, w, h):
+    # Get the mean of the frame and convert to blob
+    mean = np.mean(frame, axis=(0, 1))
+    blob = cv2.dnn.blobFromImage(frame, 1.0, (RES, RES), mean)
+
+    # Set frame (blob) as input to network and get detections
+    detection_net.setInput(blob)
+    detections = detection_net.forward()
+
+    predictions = []
+    # Loop over the detections
+    for i in range(0, detections.shape[2]):
+        confidence = detections[0, 0, i, 2]
+
+        # Ignore ones with conf below threshold
+        if confidence < conf_threshold:
+            continue
+
+        # Get bounding box dims with respect to original frame
+        box = (detections[0, 0, i, 3:7] * np.array([w, h, w, h])).astype("int")
+        x1, y1, x2, y2 = box
+
+        # calculate the IoU
+        iou = IoU(crosshair_box, box)
+
+        # package
+        predictions.append((iou, box))
+
+    return predictions
+
+def align_and_encode_face(frame, box):
+    '''
+    align face in image and encode it
+    :return: currently, cropped and aligned face
+             future, encoding of face once implemented
+    '''
+    pass
+
+
+def get_landmarks(frame, box, show_landmarks = False):
+    grayscale_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    
+    x1, y1, x2, y2 = box
+    rect = dlib.rectangle(x1, y1, x2, y2)
+
+    # get landmark shape and extract coordinates
+    shape = landmark_net(grayscale_frame, rect)
+    coordinates = []
+    for i in range(68):
+        coordinates.append((shape.part(i).x, shape.part(i).y))
+
+        ### FOR DEBUGGING AND TESTING
+        if show_landmarks:
+            for (x, y) in coordinates:
+                cv2.circle(frame, (x, y), 2, (0, 255, 0), -1)
+
+    # build dictionary with keypoints
+    landmarks = {'nose': coordinates[27:35],
+                 'right_eye': coordinates[36:41],
+                 'left_eye': coordinates[42:47],
+                 'right_brow': coordinates[17:21],
+                 'left_brow': coordinates[22:26],
+                 'mouth': coordinates[48:],
+                 'jaw': coordinates[:16],
+                 'nose_tip': coordinates[33],
+                 'left_eye_corners': (coordinates[36], coordinates[39]),
+                 'right_eye_corners': (coordinates[45], coordinates[42])
+                 }
+    return landmarks
+
+
 # Capture video feed, frame by frame
 def display_video(mode='normal', name=None):
     cap = cv2.VideoCapture(0)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, video_size)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, video_size)
+    global frame_width
     frame_width = int(cap.get(3))
+    global frame_height
     frame_height = int(cap.get(4))
-    crosshair_box = [int(frame_width/3.5), int(frame_height/5),
-                     int(frame_width-frame_width/3.5), int(frame_height-frame_height/5)]
     success = True
     initial = True
+    show_landmarks = False
 
     while success:
         if initial:
@@ -209,39 +293,24 @@ def display_video(mode='normal', name=None):
         og_frame = frame.copy()
         resized_frame = cv2.resize(frame, (RES, RES))
 
-        # Get the mean of the frame and convert to blob
-        mean = np.mean(frame, axis=(0, 1))
-        blob = cv2.dnn.blobFromImage(resized_frame, 1.0, (RES, RES), mean)
-
-        # Set frame (blob) as input to network and get detections
-        net.setInput(blob)
-        detections = net.forward()
-
         crosshair_color = (0, 0, 255)
         thickness = 2
+
+        faces = detect_faces(resized_frame, frame_width, frame_height)
         # Loop over the detections
-        for i in range(0, detections.shape[2]):
-            confidence = detections[0, 0, i, 2]
-
-            # Ignore ones with conf below threshold
-            if confidence < conf_threshold:
-                continue
-
-            # Get bounding box dims with respect to original frame
-            box = detections[0, 0, i, 3:7] * np.array([frame_width, frame_height,
-                                                       frame_width, frame_height])
-            x1, y1, x2, y2 = box.astype("int")
-
-            # Draw the bounding box and confidence level
-            confidence_level = "%.2f" % (confidence * 100)
-            y = y1 - 10 if y1 - 10 > 10 else y1 + 10
-
-            if IoU(crosshair_box, [x1, y1, x2, y2]) > iou_threshold:
+        for face in faces:
+            iou, box = face
+            # check if inside crosshairs
+            # if true change crosshair color and increase thickness else draw box around face
+            if iou > iou_threshold:
                 crosshair_color = (0, 255, 0)
                 thickness = 4
             else:
+                x1, y1, x2, y2 = box
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                cv2.putText(frame, confidence_level, (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
+                #cv2.putText(frame, confidence_level, (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
+            landmarks = get_landmarks(frame, box, show_landmarks)
+
 
         # Legend
         cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 150), 1)
@@ -286,12 +355,8 @@ def display_video(mode='normal', name=None):
                 filename = os.path.join('frames', str(time.time()*1000) + '.png')
                 cv2.imwrite(filename, og_frame)
 
-        '''
-         if np.argmax(prediction) == 0:
-             for i in range(shrug.shape[1]):
-                 for j in range(shrug.shape[0]):
-                     frame[425+j][500+i] = shrug[j][i]
-         '''
+        if key & 0xFF == ord('l'):
+            show_landmarks = not show_landmarks
 
 
     # Clean up
@@ -301,5 +366,5 @@ def display_video(mode='normal', name=None):
 
 
 screen_width, screen_height = set_screen_dim()
-login()
+#login()
 display_video()
