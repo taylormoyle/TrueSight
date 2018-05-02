@@ -231,16 +231,8 @@ def detect_faces(frame, w, h):
 
     return predictions
 
-def align_and_encode_face(frame, box):
-    '''
-    align face in image and encode it
-    :return: currently, cropped and aligned face
-             future, encoding of face once implemented
-    '''
-    pass
 
-
-def get_landmarks(frame, box, show_landmarks = False):
+def get_landmarks(frame, box, show_landmarks=False):
     grayscale_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     
     x1, y1, x2, y2 = box
@@ -266,10 +258,51 @@ def get_landmarks(frame, box, show_landmarks = False):
                  'mouth': coordinates[48:],
                  'jaw': coordinates[:16],
                  'nose_tip': coordinates[33],
-                 'left_eye_corners': (coordinates[36], coordinates[39]),
-                 'right_eye_corners': (coordinates[45], coordinates[42])
+                 'right_eye_corners': (coordinates[36], coordinates[39]),
+                 'left_eye_corners': (coordinates[45], coordinates[42])
                  }
     return landmarks
+
+
+def align_and_encode_face(frame, box, show_landmarks=False):
+    '''
+    align face in image and encode it
+    :return: currently, cropped and aligned face
+             future, encoding of face once implemented
+    '''
+    landmarks = get_landmarks(frame, box, show_landmarks)
+    nose_x, nose_y = landmarks['nose_tip']
+    center_x, center_y = frame_width / 2, frame_height / 2
+
+    # Shift image
+    t_x = center_x - nose_x
+    t_y = center_y - nose_y
+    M = np.float32([[1, 0, t_x], [0, 1, t_y]])
+    centered_frame = cv2.warpAffine(frame, M, (frame_width, frame_height))
+    cv2.imshow('Centered', centered_frame)
+
+    # Rotate image
+    #R = cv2.getRotationMatrix2D((center_x, center_y), 10, 1)
+    #rotated_frame = cv2.warpAffine(centered_frame, R, (frame_width, frame_height))
+    #cv2.imshow('Rotated', rotated_frame)
+
+    # Crop image
+    pad = 2
+    left_brow = landmarks['left_brow'][2][1]
+    right_brow = landmarks['right_brow'][2][1]
+    left_jaw = landmarks['jaw'][15][0]
+    right_jaw = landmarks['jaw'][0][0]
+    average_height = int((nose_y - left_brow) + (nose_y - right_brow) / 2)
+    average_width = int((left_jaw - nose_x) + (nose_x - right_jaw) / 2)
+    y1 = int(nose_y - average_height - pad)
+    y2 = int(nose_y + average_height + pad)
+    x1 = int(nose_x - average_width - pad)
+    x2 = int(nose_x + average_width + pad)
+    if y1 and y2 and x1 and x2 >= 0:
+        cropped_frame = frame[y1:y2, x1:x2, :]
+        cv2.imwrite('frames\\Cropped.png', cropped_frame)
+    else:
+        print('Out of Bounds')
 
 
 # Capture video feed, frame by frame
@@ -309,7 +342,7 @@ def display_video(mode='normal', name=None):
                 x1, y1, x2, y2 = box
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
                 #cv2.putText(frame, confidence_level, (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
-            landmarks = get_landmarks(frame, box, show_landmarks)
+            cropped_image = align_and_encode_face(frame, box, show_landmarks)
 
 
         # Legend
@@ -322,7 +355,6 @@ def display_video(mode='normal', name=None):
                         (int(frame_width / 5), frame_height - 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (100, 255, 0), 1)
 
         draw_crosshairs(frame, frame_width, frame_height, crosshair_color, thickness)
-
         cv2.imshow('TrueSight', frame)
 
         # Quit video feed
