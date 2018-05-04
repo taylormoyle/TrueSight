@@ -7,7 +7,6 @@ import glob
 import dlib
 from Operations import intersection_over_union as IoU
 
-
 RES = 300
 username = ""
 password = ""
@@ -17,9 +16,8 @@ iou_threshold = 0.4
 frame_width = 0
 frame_height = 0
 
-
 crosshair_box = [int(frame_width / 3.5), int(frame_height / 5),
-                     int(frame_width - frame_width / 3.5), int(frame_height - frame_height / 5)]
+                 int(frame_width - frame_width / 3.5), int(frame_height - frame_height / 5)]
 
 # files for the model
 # face detector
@@ -32,6 +30,7 @@ landmark_model_file = os.path.join('models', 'landmark_detector', 'face_landmark
 # load all models
 detection_net = cv2.dnn.readNetFromCaffe(prototxt, detection_model_file)
 landmark_net = dlib.shape_predictor(landmark_model_file)
+
 
 def set_screen_dim():
     root = Tk()
@@ -97,8 +96,8 @@ def login():
         btn_quit.pack(anchor=S, side=RIGHT)
 
         entry_username.focus_set()
-        #root.bind('<Return>', (lambda event: retrieve_user_input()))
-        #root.bind('<Tab>', (lambda event: entry_password.focus_set()))
+        # root.bind('<Return>', (lambda event: retrieve_user_input()))
+        # root.bind('<Tab>', (lambda event: entry_password.focus_set()))
         root.protocol("WM_DELETE_WINDOW", (lambda: close_window(root)))
         root.mainloop()
 
@@ -181,24 +180,24 @@ def menu():
 
 
 def draw_crosshairs(frame, width, height, color, thickness):
-        line_length = 50
-        cv2.line(frame, (int(width / 3.5), int(height / 5)),
-                 (int(width / 3.5) + line_length, int(height / 5)), color, thickness)
-        cv2.line(frame, (int(width - width / 3.5) - line_length, int(height / 5)),
-                 (int(width - width / 3.5), int(height / 5)), color, thickness)
-        cv2.line(frame, (int(width / 3.5), int(height - height / 5)),
-                 (int(width / 3.5) + line_length, int(height-height / 5)), color, thickness)
-        cv2.line(frame, (int(width - width / 3.5) - line_length, int(height-height / 5)),
-                 (int(width - width / 3.5), int(height-height / 5)), color, thickness)
+    line_length = 50
+    cv2.line(frame, (int(width / 3.5), int(height / 5)),
+             (int(width / 3.5) + line_length, int(height / 5)), color, thickness)
+    cv2.line(frame, (int(width - width / 3.5) - line_length, int(height / 5)),
+             (int(width - width / 3.5), int(height / 5)), color, thickness)
+    cv2.line(frame, (int(width / 3.5), int(height - height / 5)),
+             (int(width / 3.5) + line_length, int(height - height / 5)), color, thickness)
+    cv2.line(frame, (int(width - width / 3.5) - line_length, int(height - height / 5)),
+             (int(width - width / 3.5), int(height - height / 5)), color, thickness)
 
-        cv2.line(frame, (int(width / 3.5), int(height / 5)),
-                 (int(width / 3.5), int(height / 5) + line_length), color, thickness)
-        cv2.line(frame, (int(width - width / 3.5), int(height / 5)),
-                 (int(width - width / 3.5), int(height / 5) + line_length), color, thickness)
-        cv2.line(frame, (int(width / 3.5), int(height - height / 5)),
-                 (int(width / 3.5), int(height - height / 5) - line_length), color, thickness)
-        cv2.line(frame, (int(width - width / 3.5), int(height - height / 5)),
-                 (int(width - width / 3.5), int(height - height / 5) - line_length), color, thickness)
+    cv2.line(frame, (int(width / 3.5), int(height / 5)),
+             (int(width / 3.5), int(height / 5) + line_length), color, thickness)
+    cv2.line(frame, (int(width - width / 3.5), int(height / 5)),
+             (int(width - width / 3.5), int(height / 5) + line_length), color, thickness)
+    cv2.line(frame, (int(width / 3.5), int(height - height / 5)),
+             (int(width / 3.5), int(height - height / 5) - line_length), color, thickness)
+    cv2.line(frame, (int(width - width / 3.5), int(height - height / 5)),
+             (int(width - width / 3.5), int(height - height / 5) - line_length), color, thickness)
 
 
 def detect_faces(frame, w, h):
@@ -234,7 +233,7 @@ def detect_faces(frame, w, h):
 
 def get_landmarks(frame, box, show_landmarks=False):
     grayscale_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    
+
     x1, y1, x2, y2 = box
     rect = dlib.rectangle(x1, y1, x2, y2)
 
@@ -279,30 +278,32 @@ def align_and_encode_face(frame, box, show_landmarks=False):
     t_y = center_y - nose_y
     M = np.float32([[1, 0, t_x], [0, 1, t_y]])
     centered_frame = cv2.warpAffine(frame, M, (frame_width, frame_height))
-    cv2.imshow('Centered', centered_frame)
+    #cv2.imshow('Centered', centered_frame)
 
-    # Rotate image
-    #R = cv2.getRotationMatrix2D((center_x, center_y), 10, 1)
-    #rotated_frame = cv2.warpAffine(centered_frame, R, (frame_width, frame_height))
-    #cv2.imshow('Rotated', rotated_frame)
+    '''
+    # Rotate image (enhancement)
+    R = cv2.getRotationMatrix2D((nose_x, nose_y), 10, 1)
+    rotated_frame = cv2.warpAffine(centered_frame, R, (frame_width, frame_height))
+    cv2.imshow('Rotated', rotated_frame)
+    '''
 
     # Crop image
-    pad = 2
+    pad = 10
     left_brow = landmarks['left_brow'][2][1]
     right_brow = landmarks['right_brow'][2][1]
     left_jaw = landmarks['jaw'][15][0]
     right_jaw = landmarks['jaw'][0][0]
     average_height = int((nose_y - left_brow) + (nose_y - right_brow) / 2)
     average_width = int((left_jaw - nose_x) + (nose_x - right_jaw) / 2)
-    y1 = int(nose_y - average_height - pad)
-    y2 = int(nose_y + average_height + pad)
-    x1 = int(nose_x - average_width - pad)
-    x2 = int(nose_x + average_width + pad)
-    if y1 and y2 and x1 and x2 >= 0:
-        cropped_frame = frame[y1:y2, x1:x2, :]
-        cv2.imwrite('frames\\Cropped.png', cropped_frame)
-    else:
-        print('Out of Bounds')
+    y1 = int((left_brow + right_brow) / 2) - (pad*2)
+    y2 = int(landmarks['jaw'][8][1]) + pad
+    x1 = int(landmarks['jaw'][0][0]) - pad
+    x2 = int(landmarks['jaw'][-1][0]) + pad
+    cropped_frame = frame[y1:y2, x1:x2, :]
+    #cv2.imshow('Cropped.png', cropped_frame)
+
+    #encode and save cropped image
+
 
 
 # Capture video feed, frame by frame
@@ -341,9 +342,8 @@ def display_video(mode='normal', name=None):
             else:
                 x1, y1, x2, y2 = box
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                #cv2.putText(frame, confidence_level, (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
+                # cv2.putText(frame, confidence_level, (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
             cropped_image = align_and_encode_face(frame, box, show_landmarks)
-
 
         # Legend
         cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 150), 1)
@@ -384,12 +384,11 @@ def display_video(mode='normal', name=None):
                 menu()
                 break
             else:
-                filename = os.path.join('frames', str(time.time()*1000) + '.png')
+                filename = os.path.join('frames', str(time.time() * 1000) + '.png')
                 cv2.imwrite(filename, og_frame)
 
         if key & 0xFF == ord('l'):
             show_landmarks = not show_landmarks
-
 
     # Clean up
     cap.release()
@@ -398,5 +397,5 @@ def display_video(mode='normal', name=None):
 
 
 screen_width, screen_height = set_screen_dim()
-#login()
+# login()
 display_video()
