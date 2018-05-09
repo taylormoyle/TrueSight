@@ -279,6 +279,35 @@ def get_landmarks(frame, box, show_landmarks=False):
     return landmarks
 
 
+def calculate_similarity(users, current_user):
+    diff = users - current_user
+    squared = np.square(diff)
+    added = np.sum(squared, axis=1)
+    root = np.sqrt(added)
+    return root
+
+
+def find_similarity(current_user):
+    filenames = os.path.join('users', '*.txt')
+    users = glob.glob(filenames)
+    encodings = np.zeros((len(users), 128))
+    if len(users) == 0:
+        return None
+    for i in range(len(users)):
+        file = open(users[i])
+        encoding = file.read().split()
+        encodings[i] = np.array(encoding, dtype=np.float32)
+        file.close()
+    similarity = calculate_similarity(encodings, current_user)
+    candidate = np.argmin(similarity)
+    print(similarity)
+    if similarity[candidate] < rec_threshold:
+        _, filename = os.path.split(users[candidate])
+        print('Cand:', similarity[candidate])
+        return filename[:-4]
+    else:
+        return None
+
 
 def get_encoding(frame):
     mean = np.mean(frame)
