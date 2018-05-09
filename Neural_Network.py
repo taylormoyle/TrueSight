@@ -97,7 +97,6 @@ def create_facial_rec(inp, architecture, keep_prob, training=False):
 
     '''   LAYER 5   '''
     FM, C, H, W, _, pad = architecture['conv5']
-    p_h, p_w, stride, _ = architecture['pool5']
     with tf.name_scope('layer_5'):
         w_conv5, beta5, gamma5, mean5, var5 = op.initialize_weights(architecture['conv5'])
         w = tf.transpose(w_conv5, perm=[2, 3, 1, 0])
@@ -105,7 +104,6 @@ def create_facial_rec(inp, architecture, keep_prob, training=False):
         relu5 = op.relu(conv5 + beta5)
         #batch_norm5 = op.batch_normalize(relu5, beta5, gamma5,
         #                                 mean5, var5, training=training)
-        pool5 = op.pool(relu5, p_h, p_w, stride)
 
         #mean5 = batch_norm5[2]
         #var5 = batch_norm5[3]
@@ -120,7 +118,7 @@ def create_facial_rec(inp, architecture, keep_prob, training=False):
     with tf.name_scope('layer_6'):
         w_conv6, beta6, gamma6, mean6, var6 = op.initialize_weights(architecture['conv6'])
         w = tf.transpose(w_conv6, perm=[2, 3, 1, 0])
-        conv6 = tf.nn.conv2d(pool5, w, strides=[1, 1, 1, 1], padding='SAME', data_format="NCHW")
+        conv6 = tf.nn.conv2d(relu5, w, strides=[1, 1, 1, 1], padding='SAME', data_format="NCHW")
         relu6 = op.relu(conv6 + beta6)
         #batch_norm6 = op.batch_normalize(relu6, beta6, gamma6,
         #                                 mean6, var6, training=training)
@@ -148,18 +146,105 @@ def create_facial_rec(inp, architecture, keep_prob, training=False):
     #tf.summary.histogram('full_conn_1', fc_relu)
 
     '''   DROPOUT   '''
-    dropout = tf.nn.dropout(fc_relu, keep_prob=keep_prob)
+    #dropout = tf.nn.dropout(fc_relu, keep_prob=keep_prob)
 
     '''   FULLY CONNECTED LAYER 2   '''
     fc_in, fc_out = architecture['full2']
     with tf.name_scope('full_conn_layer_2'):
         w_full2 = tf.Variable(tf.truncated_normal([fc_in, fc_out], stddev=0.01), name='weights')
         b_full2 = tf.Variable(tf.zeros([fc_out]), name='biases')
-        full_conn2 = op.full_conn(dropout, w_full2, b_full2)
+        full_conn2 = op.full_conn(fc_relu, w_full2, b_full2)
     #tf.summary.histogram('full_conn_2', full_conn2)
 
     #prediction = op.sigmoid(full_conn2), relu1                   # for training
     prediction = full_conn2, relu1
+    return prediction
+
+
+def create_test_rec(inp, architecture, keep_prob, training):
+
+    '''   LAYER 1   '''
+    FM, C, H, W, _, pad = architecture['conv1']
+    p_h, p_w, stride, _ = architecture['pool1']
+
+    with tf.name_scope('layer_1'):
+        w_conv1 = tf.Variable(tf.truncated_normal([H, W, C, FM], stddev=0.01))
+        b_conv1 = tf.Variable(tf.zeros([FM]), dtype=tf.float32)
+        conv1 = tf.nn.conv2d(inp, w_conv1, strides=[1, 1, 1, 1], padding=pad)
+        relu1 = tf.nn.relu(conv1 + b_conv1)
+        bn1 = tf.layers.batch_normalization(relu1, axis=1, training=training)
+        pool1 = tf.nn.max_pool(bn1, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+
+    '''   LAYER 2   '''
+    FM, C, H, W, _, pad = architecture['conv2']
+    p_h, p_w, stride, _ = architecture['pool2']
+    with tf.name_scope('layer_2'):
+        w_conv2 = tf.Variable(tf.truncated_normal([H, W, C, FM], stddev=0.01))
+        b_conv2 = tf.Variable(tf.zeros([FM]), dtype=tf.float32)
+        conv2 = tf.nn.conv2d(pool1, w_conv2, strides=[1, 1, 1, 1], padding=pad)
+        relu2 = tf.nn.relu(conv2 + b_conv2)
+        bn2 = tf.layers.batch_normalization(relu2, axis=1, training=training)
+        pool2 = tf.nn.max_pool(bn2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+
+    '''   LAYER 3   '''
+    FM, C, H, W, _, pad = architecture['conv3']
+    p_h, p_w, stride, _ = architecture['pool3']
+    with tf.name_scope('layer_3'):
+        w_conv3 = tf.Variable(tf.truncated_normal([H, W, C, FM], stddev=0.01))
+        b_conv3 = tf.Variable(tf.zeros([FM]), dtype=tf.float32)
+        conv3 = tf.nn.conv2d(pool2, w_conv3, strides=[1, 1, 1, 1], padding=pad)
+        relu3 = tf.nn.relu(conv3 + b_conv3)
+        bn3 = tf.layers.batch_normalization(relu3, axis=1, training=training)
+        pool3 = tf.nn.max_pool(bn3, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+
+    '''   LAYER 4   '''
+    FM, C, H, W, _, pad = architecture['conv4']
+    p_h, p_w, stride, _ = architecture['pool4']
+    with tf.name_scope('layer_4'):
+        w_conv4 = tf.Variable(tf.truncated_normal([H, W, C, FM], stddev=0.01))
+        b_conv4 = tf.Variable(tf.zeros([FM]), dtype=tf.float32)
+        conv4 = tf.nn.conv2d(pool3, w_conv4, strides=[1, 1, 1, 1], padding=pad)
+        relu4 = tf.nn.relu(conv4 + b_conv4)
+        bn4 = tf.layers.batch_normalization(relu4, axis=1, training=training)
+        pool4 = tf.nn.max_pool(bn4, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+
+    '''   LAYER 5   '''
+    FM, C, H, W, _, pad = architecture['conv5']
+    with tf.name_scope('layer_5'):
+        w_conv5 = tf.Variable(tf.truncated_normal([H, W, C, FM], stddev=0.01))
+        b_conv5 = tf.Variable(tf.zeros([FM]), dtype=tf.float32)
+        conv5 = tf.nn.conv2d(pool4, w_conv5, strides=[1, 1, 1, 1], padding=pad)
+        relu5 = tf.nn.relu(conv5 + b_conv5)
+        bn5 = tf.layers.batch_normalization(relu5, axis=1, training=training)
+
+    '''   LAYER 6   '''
+    FM, C, H, W, _, pad = architecture['conv6']
+    with tf.name_scope('layer_6'):
+        w_conv6 = tf.Variable(tf.truncated_normal([H, W, C, FM], stddev=0.01))
+        b_conv6 = tf.Variable(tf.zeros([FM]), dtype=tf.float32)
+        conv6 = tf.nn.conv2d(bn5, w_conv6, strides=[1, 1, 1, 1], padding=pad)
+        relu6 = tf.nn.relu(conv6 + b_conv6)
+        bn6 = tf.layers.batch_normalization(relu6, axis=1, training=training)
+
+    '''   LAYER 7   '''
+    FM, C, H, W, _, pad = architecture['conv7']
+    with tf.name_scope('layer_7'):
+        w_conv7 = tf.Variable(tf.truncated_normal([H, W, C, FM], stddev=0.01))
+        b_conv7 = tf.Variable(tf.zeros([FM]), dtype=tf.float32)
+        conv7 = tf.nn.conv2d(bn6, w_conv7, strides=[1, 1, 1, 1], padding=pad)
+        relu7 = tf.nn.relu(conv7 + b_conv7)
+        bn7 = tf.layers.batch_normalization(relu7, axis=1, training=training)
+
+    '''   LAYER 8   '''
+    FM, C, H, W, _, pad = architecture['conv8']
+    with tf.name_scope('layer_8'):
+        w_conv8 = tf.Variable(tf.truncated_normal([H, W, C, FM], stddev=0.01))
+        b_conv8 = tf.Variable(tf.zeros([FM]), dtype=tf.float32)
+        conv8 = tf.nn.conv2d(bn7, w_conv8, strides=[1, 1, 1, 1], padding=pad)
+        relu8 = tf.nn.relu(conv8 + b_conv8)
+
+    # prediction = op.sigmoid(full_conn2), relu1                   # for training
+    prediction = full_conn3, relu1
     return prediction
 
 
