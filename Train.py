@@ -9,10 +9,10 @@ import random
 from glob import glob
 from tensorflow.python import debug as tf_debug
 
-RES = 416
+RES = 208
 DELTA_HUE = 0.32
-MAX_DELTA_SATURATION = 1.5
-MIN_DELTA_SATURATION = 0.5
+MAX_DELTA_SATURATION = 1.25
+MIN_DELTA_SATURATION = 0.75
 MAX_DELTA_BRIGHTNESS = 0.3
 MAX_CONTRAST = 1.5
 MIN_CONTRAST = 0.5
@@ -51,73 +51,6 @@ def prep_classification_data(data_dir, focus):
     return data, labels
 
 
-def filter_data(filenames, labels, classes):
-    ret_imgs = []
-    ret_lbls = {}
-    for img in filenames:
-        if len(labels[img]) == 1:
-            label = np.zeros(len(classes))
-            name = labels[img][0]['name']
-            lbl = classes.index(name)
-            label[lbl] = 1
-
-            ret_imgs.append(img)
-            ret_lbls[img] = label
-    return ret_imgs, ret_lbls
-
-def prep_face_data(train_fn, validation_fn, data_directory):
-    dataset = {'training': [], 'test': [], 'validation': []}
-    train_labels = {}
-    valtest_labels = {}
-
-    with open(train_fn) as f:
-        filename = ""
-        count = 0
-        line = f.readline()
-        while not line == "":
-            if ".jpg" in line:
-                name = line.split('/')
-                filename = os.path.join(data_directory, 'WIDER_train', 'images', name[0], name[1])
-                dataset['training'].append(filename[:-1])
-                count = f.readline()
-            label = []
-            for b in range(int(count)):
-                box = f.readline().split()
-                x = int(box[0])
-                y = int(box[1])
-                w = int(box[2])
-                h = int(box[3])
-                label.append([1, x, y, w, h])
-            train_labels[filename[:-1]] = label
-            line = f.readline()
-
-    with open(validation_fn) as f:
-        filename = ""
-        count = 0
-        line = f.readline()
-        while not line == "":
-            if ".jpg" in line:
-                name = line.split('/')
-                filename = os.path.join(data_directory, 'WIDER_val', 'images', name[0], name[1])
-                dataset['validation'].append(filename[:-1])
-                count = f.readline()
-            label = []
-            for b in range(int(count)):
-                box = f.readline().split()
-                x = int(box[0])
-                y = int(box[1])
-                w = int(box[2])
-                h = int(box[3])
-                label.append([1, x, y, w, h])
-            valtest_labels[filename[:-1]] = label
-            line = f.readline()
-
-    random.shuffle(dataset['validation'])
-    dataset['test'] = dataset['validation'][:int(len(dataset['validation']) / 2)]
-    dataset['validation'] = dataset['validation'][int(len(dataset['validation']) / 2):]
-    return dataset, train_labels, valtest_labels
-
-
 def load_img(filename_queue):
     '''
     Loads jpeg image and handsoff to process for data augmentation
@@ -130,7 +63,7 @@ def load_img(filename_queue):
     image = tf.image.decode_jpeg(value, channels=3)
     image.set_shape([RES, RES, 3])
     image = process_data(image)
-    image = tf.transpose(image, perm=[2, 0, 1])
+    #image = tf.transpose(image, perm=[2, 0, 1])
     return image, key
 
 
@@ -182,17 +115,31 @@ def shift_image(image):
     shift_x = tf.random_uniform([1], minval=-10, maxval=10, dtype=tf.int32)
     shift_y = tf.random_uniform([1], minval=-10, maxval=10, dtype=tf.int32)
 
-def process_data(images):
+    x_offest, x_pad = tf.cond(tf.greater_equal(shift_x, 0),
+                              lambda: ([0, RES-shift_x], [shift_x, 0]),
+                              lambda: ([-shift_x, RES], [0, -shift_x]))
+    y_offset, y_pad = tf.cond(tf.greater_equal(shift_y, 0),
+                              lambda: ([0, RES-shift_y], [shift_y, 0]),
+                              lambda: ([-shift_y, RES], [0, -shift_y]))
+    shifted_image = image[y_offset[0]:y_offset[1], x_offest[0]:x_offest[1], :]
+    padded_shifted_image = tf.pad(shifted_image, [y_pad, x_pad], "CONSTANT")
+    return padded_shifted_image
+
+
+def process_data(image):
     '''
     Performs transformations to pseudo-expand dataset
     :param images:
     :return: Augmented Images
     '''
+
+    norm_img = tf.image.per_image_standardization(image)
+
     # Perform Transformations on all images to diversify dataset
-    image_huerized = tf.image.random_hue(images, DELTA_HUE)
+    #image_huerized = tf.image.random_hue(images, DELTA_HUE)
     #image_saturized = tf.image.random_saturation(image_huerized, MIN_DELTA_SATURATION, MAX_DELTA_SATURATION)
     #image_contrasterized = tf.image.random_contrast(image_saturized, MIN_CONTRAST, MAX_CONTRAST)
-    image_flipperized = tf.image.random_flip_left_right(image_huerized)
+    image_flipperized = tf.image.random_flip_left_right(norm_img)
 
     brightness_min = 1.0 - (MAX_DELTA_BRIGHTNESS / 100)
     brightness_max = 1.0 - (MAX_DELTA_BRIGHTNESS / 100)
@@ -254,36 +201,39 @@ def grad_check(net, inp, labels, weights, gradients, infos, epsilon=1e-5):
 
 '''     TRAINING SCRIPT     '''
 
-architecture = {'conv1': [16, 3, 3, 3, 1, 1], 'pool1': [2, 2, 2, 0],    # output shape 208
-                'conv2': [32, 16, 3, 3, 1, 1], 'pool2': [2, 2, 2, 0],   # output shape 104
-                'conv3': [32, 32, 3, 3, 1, 1], 'pool3': [2, 2, 2, 0],   # output shape 52
-                'conv4': [64, 32, 3, 3, 1, 1], 'pool4': [2, 2, 2, 0],  # output shape 26
-                'conv5': [64, 64, 3, 3, 1, 1], 'pool5': [2, 2, 2, 0], # output shape 13
-                'conv6': [128, 64, 3, 3, 1, 1],
-                'full1': [13*13*128, 512],
-                'full2': [512, 1]
+architecture = {'conv1': [16, 3, 3, 3, 1, 'SAME'], 'pool1': [2, 2, 2, 0],       # output shape 150
+                'conv2': [32, 16, 3, 3, 1, 'VALID'], 'pool2': [2, 2, 2, 0],     # output shape 74
+                'conv3': [64, 32, 3, 3, 1, 'VALID'], 'pool3': [2, 2, 2, 0],     # output shape 36
+                'conv4': [128, 64, 3, 3, 1, 'VALID'], 'pool4': [2, 2, 2, 0],    # output shape 17
+                'conv5': [256, 128, 3, 3, 1, 'VALID'],                          # output shape 15
+                'conv6': [512, 256, 1, 1, 1, 'VALID'],                          # output shape 15
+                'conv7': [1024, 512, 1, 1, 1, 'VALID'],                         # output shape 15
+                'conv8': [5, 1024, 1, 1, 1, 'VALID']                            # output shape 15
                 }
 
 # Specify where to load data and to save models and logs
-data_dir = "data\\classification"
+data_dir = "data\\classification\\classification"
 save_dir = "models"
 log_dir = "logs"
 conf = 0.50
+neg_size = 33000    # amount of negative examples
 
 '''    TENSORFLOW TRAINGING SCRIPT   '''
 
 # Training Hyperparamaters
 
-epochs = 10000
+epochs = 5000
 batch_size = 32
 pos_batch_perc = 0.25
-initial_learning_rate = 3e-5
+initial_learning_rate = 0.001
+steps = [20, 40, 60, 80, 400, 1000]
+scales = [1.5, 1.5, 2, 3, 0.5, 0.1]
 ending_learning_rate = 1e-5
 decay_steps = 7500
 power = 4
 momentum = 0.9
-weight_decay = 0.01
-pos_weight = 3.5
+weight_decay = 0.005
+pos_weight = 1.5
 epsilon = 1e-8
 test_iters = 100
 val_batch_size = 50
@@ -300,10 +250,10 @@ with tf.device('/cpu:0'):
 train_img_batch, train_label_batch = load_data(dataset['train'], batch_size, pos_batch_perc)
 
 # Constructing the face_rec graph
-inp_placeholder = tf.placeholder(tf.float32, shape=[None, 3, RES, RES])
+inp_placeholder = tf.placeholder(tf.float32, shape=[None, RES, RES, 3])
 training_placeholder = tf.placeholder(tf.bool)
 keep_prob = tf.placeholder(tf.float32)
-fac_rec_preds, layer = nn.create_facial_rec(inp_placeholder, architecture, keep_prob, training=training_placeholder)
+fac_rec_preds, layer = nn.create_test_rec(inp_placeholder, architecture, keep_prob, training=training_placeholder)
 
 # Calculate loss using cross entropy
 ground_truth_placeholder = tf.placeholder(tf.int32)
@@ -318,6 +268,7 @@ with tf.name_scope('loss'):
 
 with tf.name_scope('training'):
 
+    '''
     # Decay the learning rate
     learning_rate = tf.convert_to_tensor(initial_learning_rate, dtype=tf.float32)
     global_step = tf.placeholder(tf.float32)
@@ -330,7 +281,6 @@ with tf.name_scope('training'):
                    tf.pow((1 - global_decay / decay_steps), power) + \
                    ending_learning_rate
 
-    '''
     # Get optimizer and gradients
     optimizer = tf.train.MomentumOptimizer(decayed_rate, momentum=momentum)
     gradients, variables = zip(*optimizer.compute_gradients(l2_loss))
@@ -343,7 +293,8 @@ with tf.name_scope('training'):
     # Apply gradients
     train_step = optimizer.apply_gradients(zip(gradients, variables))
     '''
-    train_step = tf.train.AdamOptimizer(initial_learning_rate).minimize(l2_loss)
+    learning_rate = tf.placeholder(tf.float32)
+    train_step = tf.train.MomentumOptimizer(learning_rate, momentum).minimize(l2_loss)
 
 
 with tf.name_scope('accuracy'):
@@ -376,11 +327,11 @@ with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(coord=coord)
-    #nn.load_model(sess, 'C:\\Users\\Shadow\\PycharmProjects\\TrueSight\\models\\')
+    #nn.load_model(sess, 'models\\conv6_416_0.9286.ckpt')
 
 
     for e in range(epochs):
-        if e % 100 == 0:
+        if e % 200 == 0:
             # Run test against validation dataset
             val_correct = 0.
             val_error = 0.
@@ -407,13 +358,16 @@ with tf.Session() as sess:
                 saver.save(sess, save_path)
 
         # Run training step
+        for i,j in zip(steps, scales):
+            if e == i:
+                initial_learning_rate *= j
         train_batch, train_lbl_keys = sess.run((train_img_batch, train_label_batch))
         train_lbls = [labels[l.decode()] for l in train_lbl_keys]
         summary, maps, _ = sess.run([merged, layer, train_step], feed_dict={inp_placeholder: train_batch,
                                                                training_placeholder: True,
                                                                keep_prob: 0.5,
                                                                ground_truth_placeholder: train_lbls,
-                                                               global_step: e})
+                                                               learning_rate: initial_learning_rate})
         print("\r\033[0m%d/%d training steps.." % (e+1, epochs), end='')
         #train_writer.add_summary(summary, global_step=e)
 

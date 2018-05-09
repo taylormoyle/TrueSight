@@ -6,6 +6,8 @@ import numpy as np
 import glob
 import dlib
 from Operations import intersection_over_union as IoU
+import math
+import tensorflow as tf
 
 RES = 300
 username = ""
@@ -13,6 +15,7 @@ password = ""
 video_size = 960.0
 conf_threshold = 0.7
 iou_threshold = 0.4
+rec_threshold = 0.5
 frame_width = 0
 frame_height = 0
 
@@ -20,16 +23,29 @@ crosshair_box = [int(frame_width / 3.5), int(frame_height / 5),
                  int(frame_width - frame_width / 3.5), int(frame_height - frame_height / 5)]
 
 # files for the model
-# face detector
+# Face Detector
 prototxt = os.path.join('models', 'face_detector', 'deploy.prototxt.txt')
 detection_model_file = os.path.join('models', 'face_detector', 'nn.caffemodel')
 
-# landmark detector for alignment
+# Landmark Detector for alignment
 landmark_model_file = os.path.join('models', 'landmark_detector', 'face_landmarks.dat')
 
-# load all models
+# Encoder
+encoder_meta = os.path.join('models', 'encoder', 'model-20170511-185253.meta')
+encoder_ckpt = os.path.join('models', 'encoder', 'model-20170511-185253.ckpt-80000')
+
+# Load Detection and Landmark Models
 detection_net = cv2.dnn.readNetFromCaffe(prototxt, detection_model_file)
 landmark_net = dlib.shape_predictor(landmark_model_file)
+
+# Load Tensorflow Session
+gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.6)
+sess = tf.InteractiveSession(config=tf.ConfigProto(gpu_options=gpu_options))
+saver = tf.train.import_meta_graph(encoder_meta)
+saver.restore(sess, encoder_ckpt)
+encoder = tf.get_default_graph().get_tensor_by_name('embeddings:0')
+image_placeholder = tf.get_default_graph().get_tensor_by_name('input:0')
+phase_train_placeholder = tf.get_default_graph().get_tensor_by_name('phase_train:0')
 
 
 def set_screen_dim():
@@ -116,7 +132,7 @@ def menu():
     root.title('TrueSight')
 
     def update_list(user_list):
-        filenames = os.path.join('users', '*.png')
+        filenames = os.path.join('users', '*.txt')
         current_users = glob.glob(filenames)
         current_list_box = user_list.get(0, user_list.size())
         for user in current_users:
@@ -144,7 +160,7 @@ def menu():
         selected = user_list.curselection()
         if selected:
             username = user_list.get(selected[0]).replace(' ', '_')
-            filename = os.path.join('users', username + '.png')
+            filename = os.path.join('users', username + '.txt')
             os.remove(filename)
             user_list.delete(selected[0], selected[-1])
 
@@ -263,6 +279,45 @@ def get_landmarks(frame, box, show_landmarks=False):
     return landmarks
 
 
+def calculate_similarity(users, current_user):
+    diff = users - current_user
+    squared = np.square(diff)
+    added = np.sum(squared, axis=1)
+    root = np.sqrt(added)
+    return root
+
+
+def find_similarity(current_user):
+    filenames = os.path.join('users', '*.txt')
+    users = glob.glob(filenames)
+    encodings = np.zeros((len(users), 128))
+    if len(users) == 0:
+        return None
+    for i in range(len(users)):
+        file = open(users[i])
+        encoding = file.read().split()
+        encodings[i] = np.array(encoding, dtype=np.float32)
+        file.close()
+    similarity = calculate_similarity(encodings, current_user)
+    candidate = np.argmin(similarity)
+    print(similarity)
+    if similarity[candidate] < rec_threshold:
+        _, filename = os.path.split(users[candidate])
+        print('Cand:', similarity[candidate])
+        return filename[:-4]
+    else:
+        return None
+
+
+def get_encoding(frame):
+    mean = np.mean(frame)
+    std = np.std(frame)
+    std = np.maximum(std, 1.0/np.sqrt(frame.size))
+    norm_frame = (frame - mean) / std
+    norm_frame = norm_frame.reshape(-1, 160, 160, 3)
+    embeddings = sess.run(encoder, feed_dict={image_placeholder: norm_frame, phase_train_placeholder: False})
+    return embeddings[0]
+
 def align_and_encode_face(frame, box, show_landmarks=False):
     '''
     align face in image and encode it
@@ -302,8 +357,13 @@ def align_and_encode_face(frame, box, show_landmarks=False):
     cropped_frame = frame[y1:y2, x1:x2, :]
     #cv2.imshow('Cropped.png', cropped_frame)
 
-    #encode and save cropped image
+    # Resize (tensorflow pre-processing)
+    resize_res = 160
+    resized_frame = cv2.resize(cropped_frame, (resize_res, resize_res), interpolation=cv2.INTER_CUBIC)
 
+    # Get current user encoding
+    encoding = get_encoding(resized_frame)
+    return encoding
 
 
 # Capture video feed, frame by frame
@@ -339,11 +399,26 @@ def display_video(mode='normal', name=None):
             if iou > iou_threshold:
                 crosshair_color = (0, 255, 0)
                 thickness = 4
+
+                # Pre-process and get facial encodings
+                encoding = align_and_encode_face(frame, box, show_landmarks)
+
+                # Find simliarities between current user and all existing users
+                human_name = find_similarity(encoding)
+
+                # Display Recognized User's Name
+                if human_name is None:
+                    cv2.putText(frame, "UNKNOWN", (int(frame_width / 3.5), int(frame_height / 5) - 15),
+                                cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 170, 0), 1)
+                else:
+                    human_name = human_name.replace('_', ' ')
+                    cv2.putText(frame, human_name, (int(frame_width / 3.5), int(frame_height / 5) - 15),
+                                cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 170, 0), 1)
             else:
                 x1, y1, x2, y2 = box
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
                 # cv2.putText(frame, confidence_level, (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
-            cropped_image = align_and_encode_face(frame, box, show_landmarks)
+
 
         # Legend
         cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 150), 1)
@@ -377,8 +452,9 @@ def display_video(mode='normal', name=None):
         if key & 0xFF == ord('s'):
             if mode == 'add_user':
                 user_name = name.replace(' ', '_')
-                filename = os.path.join('users', user_name + '.png')
-                cv2.imwrite(filename, og_frame)
+                filename = os.path.join('users', user_name + '.txt')
+                encoding = align_and_encode_face(frame, box)
+                np.savetxt(filename, encoding)
                 cap.release()
                 cv2.destroyAllWindows()
                 menu()
@@ -397,5 +473,6 @@ def display_video(mode='normal', name=None):
 
 
 screen_width, screen_height = set_screen_dim()
-# login()
+login()
 display_video()
+sess.close()
