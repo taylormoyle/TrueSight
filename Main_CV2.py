@@ -15,7 +15,7 @@ password = ""
 video_size = 960.0
 conf_threshold = 0.7
 iou_threshold = 0.4
-rec_threshold = 0.5
+rec_threshold = 0.55
 frame_width = 0
 frame_height = 0
 
@@ -38,9 +38,11 @@ encoder_ckpt = os.path.join('models', 'encoder', 'model-20170511-185253.ckpt-800
 detection_net = cv2.dnn.readNetFromCaffe(prototxt, detection_model_file)
 landmark_net = dlib.shape_predictor(landmark_model_file)
 
+
 # Load Tensorflow Session
 gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.6)
 sess = tf.InteractiveSession(config=tf.ConfigProto(gpu_options=gpu_options))
+
 saver = tf.train.import_meta_graph(encoder_meta)
 saver.restore(sess, encoder_ckpt)
 encoder = tf.get_default_graph().get_tensor_by_name('embeddings:0')
@@ -169,12 +171,30 @@ def menu():
         root.destroy()
         display_video()
 
+    def double_click():
+        selected = user_list.curselection()
+        filenames = os.path.join('users', '*.png')
+        current_users = glob.glob(filenames)
+        print(selected)
+        if selected:
+            print(selected)
+            for user in current_users:
+                _, filename = os.path.split(user)
+                user_name = filename[:-4].replace('_', ' ')
+                print(selected[0])
+                print(filename[:-4])
+                if user_name == selected[0]:
+                    img = PhotoImage(Image.open(user))
+                    panel = Label(root, image=img)
+                    panel.pack(side='bottom', fill='both', expand='yes')
+
     scrollbar = Scrollbar(root)
     scrollbar.grid(column=5, row=0, sticky=N + S, pady=10, rowspan=7)
     user_list = Listbox(root, yscrollcommand=scrollbar.set)
     user_list.grid(column=0, row=0, padx=10, pady=10, rowspan=7, columnspan=4)
     user_list.config(width=65, height=26)
     scrollbar.config(command=user_list.yview)
+    user_list.bind("<Double-1>", double_click())
 
     update_list(user_list)
 
@@ -300,10 +320,10 @@ def find_similarity(current_user):
         file.close()
     similarity = calculate_similarity(encodings, current_user)
     candidate = np.argmin(similarity)
-    print(similarity)
+    #print(similarity)
     if similarity[candidate] < rec_threshold:
         _, filename = os.path.split(users[candidate])
-        print('Cand:', similarity[candidate])
+        #print('Cand:', similarity[candidate])
         return filename[:-4]
     else:
         return None
@@ -312,11 +332,12 @@ def find_similarity(current_user):
 def get_encoding(frame):
     mean = np.mean(frame)
     std = np.std(frame)
-    std = np.maximum(std, 1.0/np.sqrt(frame.size))
+    std = np.maximum(std, 1.0 / np.sqrt(frame.size))
     norm_frame = (frame - mean) / std
     norm_frame = norm_frame.reshape(-1, 160, 160, 3)
     embeddings = sess.run(encoder, feed_dict={image_placeholder: norm_frame, phase_train_placeholder: False})
     return embeddings[0]
+
 
 def align_and_encode_face(frame, box, show_landmarks=False):
     '''
@@ -328,34 +349,50 @@ def align_and_encode_face(frame, box, show_landmarks=False):
     nose_x, nose_y = landmarks['nose_tip']
     center_x, center_y = frame_width / 2, frame_height / 2
 
-    # Shift image
-    t_x = center_x - nose_x
-    t_y = center_y - nose_y
-    M = np.float32([[1, 0, t_x], [0, 1, t_y]])
-    centered_frame = cv2.warpAffine(frame, M, (frame_width, frame_height))
-    #cv2.imshow('Centered', centered_frame)
+    # draw linear regression line between outer eye corners
+    left_eye = landmarks['left_eye_corners'][0]
+    right_eye = landmarks['right_eye_corners'][0]
+    eye_orientation = (left_eye[0] - right_eye[0], left_eye[1] - right_eye[1])
+    # get angle of regression line
+    angle_rad = math.atan2(float(eye_orientation[1]), float(eye_orientation[0]))
 
-    '''
-    # Rotate image (enhancement)
-    R = cv2.getRotationMatrix2D((nose_x, nose_y), 10, 1)
-    rotated_frame = cv2.warpAffine(centered_frame, R, (frame_width, frame_height))
-    cv2.imshow('Rotated', rotated_frame)
-    '''
+    # build composite matrix
+    cosine = math.cos(angle_rad)
+    sine = math.sin(angle_rad)
+    shift_x = center_x - nose_x * cosine - nose_y * sine
+    shift_y = center_y - nose_x * -sine - nose_y * cosine
 
-    # Crop image
-    pad = 10
-    left_brow = landmarks['left_brow'][2][1]
-    right_brow = landmarks['right_brow'][2][1]
-    left_jaw = landmarks['jaw'][15][0]
-    right_jaw = landmarks['jaw'][0][0]
-    average_height = int((nose_y - left_brow) + (nose_y - right_brow) / 2)
-    average_width = int((left_jaw - nose_x) + (nose_x - right_jaw) / 2)
-    y1 = int((left_brow + right_brow) / 2) - (pad*2)
-    y2 = int(landmarks['jaw'][8][1]) + pad
-    x1 = int(landmarks['jaw'][0][0]) - pad
-    x2 = int(landmarks['jaw'][-1][0]) + pad
-    cropped_frame = frame[y1:y2, x1:x2, :]
-    #cv2.imshow('Cropped.png', cropped_frame)
+    P = np.float32([[cosine, sine, shift_x], [-sine, cosine, shift_y]])
+
+    # apply composite matrix to image
+    aligned_frame = cv2.warpAffine(frame, P, (frame_width, frame_height))
+
+    ## Crop image
+    lbrow = landmarks['left_brow'][2]
+    rbrow = landmarks['right_brow'][2]
+
+    # get coordinates of face edges
+    brow_center = (int((rbrow[0] + lbrow[0]) / 2), int((rbrow[1] + lbrow[1]) / 2))
+    face_bottom = (landmarks['mouth'][8][0], int((landmarks['mouth'][8][1] + landmarks['jaw'][8][1]) / 2))
+    face_right = landmarks['jaw'][3]
+    face_left = landmarks['jaw'][14]
+
+    # calculate distance between each edge and nose
+    dist_top = math.sqrt((brow_center[0] - nose_x) ** 2 + ((brow_center[1] - nose_y) ** 2))
+    dist_bottom = math.sqrt((face_bottom[0] - nose_x) ** 2 + (face_bottom[1] - nose_y) ** 2)
+    dist_right = math.sqrt((face_right[0] - nose_x) ** 2 + (face_right[1] - nose_y) ** 2)
+    dist_left = math.sqrt((face_left[0] - nose_x) ** 2 + (face_right[1] - nose_y) ** 2)
+    dist_side = (dist_left + dist_right) / 2
+
+    # set new bbox dims
+    y1 = int(center_y - dist_top)
+    y2 = int(center_y + dist_bottom)
+    x1 = int(center_x - dist_side)
+    x2 = int(center_x + dist_side)
+
+    # crop out face
+    cropped_frame = aligned_frame[y1:y2, x1:x2, :]
+    cv2.imshow('Cropped.png', cropped_frame)
 
     # Resize (tensorflow pre-processing)
     resize_res = 160
@@ -396,11 +433,11 @@ def display_video(mode='normal', name=None):
             iou, box = face
             # check if inside crosshairs
             # if true change crosshair color and increase thickness else draw box around face
-            if iou > iou_threshold:
+            if iou > iou_threshold or True:
                 crosshair_color = (0, 255, 0)
                 thickness = 4
 
-                # Pre-process and get facial encodings
+                # Pre-process and get facial encodingsq
                 encoding = align_and_encode_face(frame, box, show_landmarks)
 
                 # Find simliarities between current user and all existing users
@@ -418,7 +455,6 @@ def display_video(mode='normal', name=None):
                 x1, y1, x2, y2 = box
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
                 # cv2.putText(frame, confidence_level, (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
-
 
         # Legend
         cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 150), 1)
@@ -455,6 +491,8 @@ def display_video(mode='normal', name=None):
                 filename = os.path.join('users', user_name + '.txt')
                 encoding = align_and_encode_face(frame, box)
                 np.savetxt(filename, encoding)
+                filename = os.path.join('users', str(user_name) + '.png')
+                cv2.imwrite(filename, og_frame)
                 cap.release()
                 cv2.destroyAllWindows()
                 menu()
