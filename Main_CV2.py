@@ -1,5 +1,6 @@
 import cv2
 from tkinter import *
+from tkinter.filedialog import askopenfilename
 import os
 import time
 import numpy as np
@@ -15,7 +16,7 @@ password = ""
 video_size = 960.0
 conf_threshold = 0.7
 iou_threshold = 0.4
-rec_threshold = 0.55
+rec_threshold = 1.0
 frame_width = 0
 frame_height = 0
 
@@ -38,11 +39,9 @@ encoder_ckpt = os.path.join('models', 'encoder', 'model-20170511-185253.ckpt-800
 detection_net = cv2.dnn.readNetFromCaffe(prototxt, detection_model_file)
 landmark_net = dlib.shape_predictor(landmark_model_file)
 
-
 # Load Tensorflow Session
 gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.6)
 sess = tf.InteractiveSession(config=tf.ConfigProto(gpu_options=gpu_options))
-
 saver = tf.train.import_meta_graph(encoder_meta)
 saver.restore(sess, encoder_ckpt)
 encoder = tf.get_default_graph().get_tensor_by_name('embeddings:0')
@@ -143,10 +142,10 @@ def menu():
                 user_list.insert(END, filename[: -4].replace('_', ' '))
 
     def add_callback(entry_name, toplevel):
-        name = entry_name.get()
+        user_name = entry_name.get()
         close_window(toplevel)
         close_window(root)
-        display_video(mode='add_user', name=name)
+        display_video(mode='add_user', name=user_name)
 
     def add_user():
         name_text = 'Enter the User\'s Name: '
@@ -171,6 +170,33 @@ def menu():
         root.destroy()
         display_video()
 
+    def import_callback(entry_name, toplevel):
+        user_name = entry_name.get()
+        photo_filename = askopenfilename(title='Import')
+        print(photo_filename)
+        photo = cv2.imread(photo_filename)
+        photo = cv2.resize(photo, (RES, RES))
+        box = detect_faces(photo, frame_width, frame_height)
+        encoding = align_and_encode_face(photo, box[0][1])
+        user_name = user_name.replace(' ', '_')
+        encoding_path = os.path.join('users', user_name + '.txt')
+        np.savetxt(encoding_path, encoding)
+        image_path = os.path.join('users', user_name + '.png')
+        cv2.imwrite(image_path, photo)
+        close_window(toplevel)
+        close_window(root)
+        menu()
+
+    def import_photo():
+        name_text = 'Enter the User\'s Name: '
+        toplevel = Toplevel()
+        lbl_name = Label(toplevel, text=name_text, height=2, width=20)
+        lbl_name.grid(column=0, row=0)
+        entry_name = Entry(toplevel, width=20)
+        entry_name.grid(column=1, row=0, padx=20)
+        entry_name.focus_set()
+        entry_name.bind('<Return>', (lambda event: import_callback(entry_name, toplevel)))
+
     def double_click():
         selected = user_list.curselection()
         filenames = os.path.join('users', '*.png')
@@ -194,7 +220,7 @@ def menu():
     user_list.grid(column=0, row=0, padx=10, pady=10, rowspan=7, columnspan=4)
     user_list.config(width=65, height=26)
     scrollbar.config(command=user_list.yview)
-    user_list.bind("<Double-1>", double_click())
+    #user_list.bind("<Double-1>", double_click())
 
     update_list(user_list)
 
@@ -202,9 +228,13 @@ def menu():
     btn_add.configure(background='black', foreground='white')
     btn_add.grid(column=6, row=0, padx=35, pady=10)
 
+    btn_import = Button(root, text='Import', width=12, command=lambda: import_photo())
+    btn_import.configure(background='black', foreground='white')
+    btn_import.grid(column=6, row=1, padx=35, pady=10)
+
     btn_delete = Button(root, text='Delete', width=12, command=lambda: delete_user())
     btn_delete.configure(background='black', foreground='white')
-    btn_delete.grid(column=6, row=1, padx=35, pady=10)
+    btn_delete.grid(column=6, row=2, padx=35, pady=10)
 
     btn_video = Button(root, text='Video', width=12, command=lambda: run_video())
     btn_video.configure(background='black', foreground='white')
@@ -320,10 +350,10 @@ def find_similarity(current_user):
         file.close()
     similarity = calculate_similarity(encodings, current_user)
     candidate = np.argmin(similarity)
-    #print(similarity)
+    print(similarity)
     if similarity[candidate] < rec_threshold:
         _, filename = os.path.split(users[candidate])
-        #print('Cand:', similarity[candidate])
+        print('Cand:', similarity[candidate])
         return filename[:-4]
     else:
         return None
@@ -367,7 +397,7 @@ def align_and_encode_face(frame, box, show_landmarks=False):
     # apply composite matrix to image
     aligned_frame = cv2.warpAffine(frame, P, (frame_width, frame_height))
 
-    ## Crop image
+    # Crop image
     lbrow = landmarks['left_brow'][2]
     rbrow = landmarks['right_brow'][2]
 
@@ -392,7 +422,7 @@ def align_and_encode_face(frame, box, show_landmarks=False):
 
     # crop out face
     cropped_frame = aligned_frame[y1:y2, x1:x2, :]
-    cv2.imshow('Cropped.png', cropped_frame)
+    #cv2.imshow('Cropped.png', cropped_frame)
 
     # Resize (tensorflow pre-processing)
     resize_res = 160
@@ -511,6 +541,6 @@ def display_video(mode='normal', name=None):
 
 
 screen_width, screen_height = set_screen_dim()
-login()
+#login()
 display_video()
 sess.close()
