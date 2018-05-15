@@ -8,6 +8,7 @@ import glob
 import dlib
 from Operations import intersection_over_union as IoU
 import math
+from PIL import ImageTk, Image
 import tensorflow as tf
 
 RES = 300
@@ -90,7 +91,7 @@ def login():
         h = bg_image.height()
         bg_label = Label(root, image=bg_image)
         bg_label.place(x=0, y=0, relwidth=1, relheight=1)
-        root.wm_geometry("%dx%d+700+400" % (w, h))
+        root.wm_geometry("%dx%d+600+400" % (w, h))
         root.title('TrueSight')
 
         lbl_username = Label(root, text='Username: ')
@@ -129,7 +130,6 @@ def menu():
     h = bg_image.height()
     bg_label = Label(root, image=bg_image)
     bg_label.place(x=0, y=0, relwidth=1, relheight=1)
-    root.wm_geometry("%dx%d+70+450" % (w, h))
     root.title('TrueSight')
 
     def update_list(user_list):
@@ -197,30 +197,29 @@ def menu():
         entry_name.focus_set()
         entry_name.bind('<Return>', (lambda event: import_callback(entry_name, toplevel)))
 
-    def double_click():
+    def select_user(evt):
         selected = user_list.curselection()
         filenames = os.path.join('users', '*.png')
         current_users = glob.glob(filenames)
-        print(selected)
         if selected:
-            print(selected)
             for user in current_users:
                 _, filename = os.path.split(user)
-                user_name = filename[:-4].replace('_', ' ')
-                print(selected[0])
-                print(filename[:-4])
-                if user_name == selected[0]:
-                    img = PhotoImage(Image.open(user))
-                    panel = Label(root, image=img)
-                    panel.pack(side='bottom', fill='both', expand='yes')
+                user_name = filename[:-4]
+                selected_name = user_list.get(selected[0]).replace(' ', '_')
+                if user_name == selected_name:
+                    img = ImageTk.PhotoImage(file=user)
+                    thumbnail = Label(root, image=img, borderwidth=4, highlightthickness=3, relief='sunken')
+                    thumbnail.image = img
+                    thumbnail.grid(column=0, row=5, padx=30, pady=10)
+                    thumbnail.config(width=250, height=250)
 
     scrollbar = Scrollbar(root)
-    scrollbar.grid(column=5, row=0, sticky=N + S, pady=10, rowspan=7)
-    user_list = Listbox(root, yscrollcommand=scrollbar.set)
-    user_list.grid(column=0, row=0, padx=10, pady=10, rowspan=7, columnspan=4)
-    user_list.config(width=65, height=26)
+    scrollbar.grid(column=5, row=0, sticky=N + S, pady=10, rowspan=5)
+    user_list = Listbox(root, yscrollcommand=scrollbar.set, exportselection=False)
+    user_list.grid(column=0, row=0, padx=10, pady=10, rowspan=5, columnspan=4)
+    user_list.config(width=50, height=15)
     scrollbar.config(command=user_list.yview)
-    #user_list.bind("<Double-1>", double_click())
+    user_list.bind('<<ListboxSelect>>', select_user)
 
     update_list(user_list)
 
@@ -238,7 +237,7 @@ def menu():
 
     btn_video = Button(root, text='Video', width=12, command=lambda: run_video())
     btn_video.configure(background='black', foreground='white')
-    btn_video.grid(column=6, row=5, padx=35, pady=10)
+    btn_video.grid(column=6, row=4, padx=35, pady=10)
 
     root.protocol("WM_DELETE_WINDOW", (lambda: close_window(root)))
 
@@ -298,7 +297,8 @@ def detect_faces(frame, w, h):
 
 
 def get_landmarks(frame, box, show_landmarks=False):
-    grayscale_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    #grayscale_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    grayscale_frame = frame
 
     x1, y1, x2, y2 = box
     rect = dlib.rectangle(x1, y1, x2, y2)
@@ -360,9 +360,8 @@ def find_similarity(current_user):
 
 
 def get_encoding(frame):
-    mean = np.mean(frame)
-    std = np.std(frame)
-    std = np.maximum(std, 1.0 / np.sqrt(frame.size))
+    mean = np.mean(frame, axis=(0, 1))
+    std = np.std(frame, axis=(0, 1))
     norm_frame = (frame - mean) / std
     norm_frame = norm_frame.reshape(-1, 160, 160, 3)
     embeddings = sess.run(encoder, feed_dict={image_placeholder: norm_frame, phase_train_placeholder: False})
