@@ -63,7 +63,7 @@ def close_window(window):
     window.quit()
 
 
-# Create basic GUI with username and password capabilities
+# Title Screen GUI with username and password capabilities
 def login():
     error_text = "Enter correct ADMIN credentials..."
     while not (username == 'admin' and password == 'admin'):
@@ -77,45 +77,84 @@ def login():
                 root.destroy()
             else:
                 error = Toplevel()
-                lbl_error = Label(error, text=error_text, height=0, width=40)
+                lbl_error = Label(error, text=error_text, height=2, width=30, font=('Times New Roman', 13))
                 lbl_error.pack()
+                w = 250
+                h = 30
+                x = int((screen_width / 2) - (w / 2))
+                y = int((screen_height / 2) - (h / 2))
+                lbl_error.place()
+                error.geometry('{}x{}+{}+{}'.format(w, h, x, y))
+                entry_username.delete('1.0', END)
+                entry_password.delete('1.0', END)
+                entry_username.focus_set()
             return username, password
+
+        def retrieve_user_input_enter(event):
+            global username
+            username = entry_username.get("1.0", "end-1c")
+            global password
+            password = entry_password.get("1.0", "end-1c")
+            if username == 'admin' and password == 'admin':
+                root.destroy()
+            else:
+                error = Toplevel()
+                lbl_error = Label(error, text=error_text, height=2, width=30, font=('Times New Roman', 13))
+                lbl_error.pack()
+                w = 250
+                h = 30
+                x = int((screen_width / 2) - (w / 2))
+                y = int((screen_height / 2) - (h / 2))
+                lbl_error.place()
+                error.geometry('{}x{}+{}+{}'.format(w, h, x, y))
+                entry_username.delete('1.0', END)
+                entry_password.delete('1.0', END)
+                entry_username.focus_set()
+            return username, password
+
+        def focus_next_window(event):
+            event.widget.tk_focusNext().focus()
+            return ("break")
 
         root = Tk()
         root.overrideredirect(1)
         root.bind('<Escape>', quit)
 
-        eye_file = os.path.join('pics', 'eye.gif')
+        eye_file = os.path.join('pics', 'title_test.gif')
         bg_image = PhotoImage(file=eye_file)
         w = bg_image.width()
         h = bg_image.height()
-        bg_label = Label(root, image=bg_image)
+        x = int((screen_width / 2) - (w / 2))
+        y = int((screen_height / 2) - (h / 2))
+        bg_label = Label(root, image=bg_image, text='TrueSight', font=('Times New Roman', 30), padx=300, pady=300)
         bg_label.place(x=0, y=0, relwidth=1, relheight=1)
-        root.wm_geometry("%dx%d+600+400" % (w, h))
+        root.geometry('{}x{}+{}+{}'.format(w, h, x, y))
         root.title('TrueSight')
 
         lbl_username = Label(root, text='Username: ')
-        lbl_username.configure(background='black', foreground='white')
+        lbl_username.configure(background='black', foreground='white', width=13, height=2, font=('Times New Roman', 15))
         lbl_username.pack(anchor=S, side=LEFT)
         entry_username = Text(root, height=1, width=10)
-        entry_username.configure(background='black', foreground='white', insertbackground='white')
+        entry_username.configure(background='black', foreground='white', insertbackground='white', width=13, height=2, font=('Times New Roman', 16))
         entry_username.pack(anchor=S, side=LEFT)
+        entry_username.bind("<Tab>", focus_next_window)
         lbl_password = Label(root, text='Password: ')
-        lbl_password.configure(background='black', foreground='white')
+        lbl_password.configure(background='black', foreground='white', width=13, height=2, font=('Times New Roman', 15))
         lbl_password.pack(anchor=S, side=LEFT)
         entry_password = Text(root, height=1, width=10)
-        entry_password.configure(background='black', foreground='white', insertbackground='white')
+        entry_password.configure(background='black', foreground='white', insertbackground='white', width=13, height=2, font=('Times New Roman', 16))
         entry_password.pack(anchor=S, side=LEFT)
-        btn_submit = Button(root, text='Submit', width=15, command=lambda: retrieve_user_input())
-        btn_submit.configure(background='black', foreground='white')
-        btn_submit.pack(anchor=S, side=LEFT)
-        btn_quit = Button(root, text='Quit', width=15, command=lambda: quit())
-        btn_quit.configure(background='black', foreground='white')
+        entry_password.bind("<Return>", retrieve_user_input_enter)
+
+        btn_submit = Button(root, text='Engage', width=15, command=lambda: retrieve_user_input())
+        btn_submit.configure(background='black', foreground='white', width=13, height=2, font=('Times New Roman', 17), borderwidth=3, relief='raised')
+        btn_submit.pack(anchor=S, side=LEFT, padx=300)
+
+        btn_quit = Button(root, text='Terminate', width=15, command=lambda: quit())
+        btn_quit.configure(background='black', foreground='white', width=13, height=2, font=('Times New Roman', 17), borderwidth=3, relief='raised')
         btn_quit.pack(anchor=S, side=RIGHT)
 
         entry_username.focus_set()
-        # root.bind('<Return>', (lambda event: retrieve_user_input()))
-        # root.bind('<Tab>', (lambda event: entry_password.focus_set()))
         root.protocol("WM_DELETE_WINDOW", (lambda: close_window(root)))
         root.mainloop()
 
@@ -540,6 +579,6 @@ def display_video(mode='normal', name=None):
 
 
 screen_width, screen_height = set_screen_dim()
-#login()
+login()
 display_video()
 sess.close()
