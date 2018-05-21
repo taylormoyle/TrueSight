@@ -11,10 +11,12 @@ from PIL import ImageTk, Image
 RES = 300
 username = ""
 password = ""
-iou_threshold=0.4
+iou_threshold = 0.0
 video_size = 960.0
 frame_width = None
 frame_height = None
+DELAY = 3
+count = 0
 
 
 # files for the model
@@ -303,6 +305,9 @@ def display_video(mode='normal', name=None):
     success = True
     initial = True
     show_landmarks = False
+    delay = 0
+    human_name = None
+
 
     while success:
         if initial:
@@ -335,10 +340,14 @@ def display_video(mode='normal', name=None):
                             for (x, y) in landmarks[k]:
                                 cv2.circle(frame, (x, y), 2, (0, 255, 0), -1)
 
-                    # Find simliarities between current user and all existing users
-                    human_name = model.find_similarity(encoding)
+                    if delay == 0 or human_name is None:
+                        # Find simliarities between current user and all existing users
+                        human_name = model.find_similarity(encoding)
+                        delay = DELAY
+                    else:
+                        delay -= 1
 
-                    # Display Recognized User's Name
+                        # Display Recognized User's Name
                     if human_name is None:
                         cv2.putText(frame, "UNKNOWN", (int(frame_width / 3.5), int(frame_height / 5) - 15),
                                     cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 170, 0), 1)
