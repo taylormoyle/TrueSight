@@ -11,7 +11,7 @@ from PIL import ImageTk, Image
 RES = 300
 username = ""
 password = ""
-iou_threshold = 0.0
+iou_threshold = 0.4
 video_size = 960.0
 frame_width = None
 frame_height = None
@@ -325,13 +325,13 @@ def display_video(mode='normal', name=None):
             iou, box = face
             # check if inside crosshairs
             # if true change crosshair color and increase thickness else draw box around face
-            if iou > iou_threshold or True:
+            if iou > iou_threshold:
                 crosshair_color = (0, 255, 0)
                 thickness = 4
 
                 if mode == 'normal':
                     # Pre-process and get facial encodingsq
-                    encoding = model.align_and_encode_face(frame, box, get_landmarks=show_landmarks)
+                    encoding = model.align_and_encode_face(frame, box, show_landmarks)
 
                     if show_landmarks:
                         encoding, landmarks = encoding
@@ -347,14 +347,6 @@ def display_video(mode='normal', name=None):
                     else:
                         delay -= 1
 
-                        # Display Recognized User's Name
-                    if human_name is None:
-                        cv2.putText(frame, "UNKNOWN", (int(frame_width / 3.5), int(frame_height / 5) - 15),
-                                    cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 170, 0), 1)
-                    else:
-                        human_name = human_name.replace('_', ' ')
-                        cv2.putText(frame, human_name, (int(frame_width / 3.5), int(frame_height / 5) - 15),
-                                    cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 170, 0), 1)
             else:
                 x1, y1, x2, y2 = box
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
@@ -369,7 +361,7 @@ def display_video(mode='normal', name=None):
             cv2.putText(frame, "Position desired face in center of cross-hairs and press 'S'",
                         (int(frame_width / 5), frame_height - 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (100, 255, 0), 1)
 
-        draw_crosshairs(frame, frame_width, frame_height, crosshair_color, thickness)
+            draw_crosshairs(frame, frame_width, frame_height, crosshair_color, thickness)
         cv2.imshow('TrueSight', frame)
 
         # Quit video feed

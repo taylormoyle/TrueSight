@@ -82,7 +82,8 @@ class Model:
         rect = dlib.rectangle(x1, y1, x2, y2)
 
         # get landmark shape and extract coordinates
-        shape = self.landmarker(frame, rect)
+        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        shape = self.landmarker(gray_frame, rect)
         coordinates = []
         for i in range(68):
             coordinates.append((shape.part(i).x, shape.part(i).y))
@@ -102,11 +103,12 @@ class Model:
         return landmarks
 
     def _get_encoding(self, frame):
-        mean = np.mean(frame, axis=(0, 1))
-        std = np.std(frame, axis=(0, 1))
-        norm_frame = (frame - mean) / std
-        norm_frame = norm_frame.reshape(-1, 160, 160, 3)
-        feed_dict = {self.image_placeholder: norm_frame, self.phase_train_placeholder: False}
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray_frame = np.zeros_like(frame)
+        gray_frame[:, :, 0] = gray_frame[:, :, 1] = gray_frame[:, :, 2] = gray
+        gray_frame = gray_frame.reshape(-1, 160, 160, 3)
+
+        feed_dict = {self.image_placeholder: gray_frame, self.phase_train_placeholder: False}
         embeddings = self.sess.run(self.encoder, feed_dict=feed_dict)
         return embeddings[0]
 
