@@ -11,7 +11,7 @@ from PIL import ImageTk, Image
 RES = 300
 username = ""
 password = ""
-iou_threshold = 0.0
+iou_threshold = 0.4
 video_size = 960.0
 frame_width = None
 frame_height = None
@@ -108,8 +108,8 @@ def login():
         root.overrideredirect(1)
         root.bind('<Escape>', quit)
 
-        eye_file = os.path.join('pics', 'title_test.gif')
-        bg_image = PhotoImage(file=eye_file)
+        title_file = os.path.join('pics', 'title.gif')
+        bg_image = PhotoImage(file=title_file)
         w = bg_image.width()
         h = bg_image.height()
         x = int((screen_width / 2) - (w / 2))
@@ -158,6 +158,7 @@ def menu():
     bg_label = Label(root, image=bg_image)
     bg_label.place(x=0, y=0, relwidth=1, relheight=1)
     root.title('TrueSight')
+    thumbnail = None
 
     def update_list(user_list):
         filenames = os.path.join('users', '*.txt')
@@ -305,9 +306,6 @@ def display_video(mode='normal', name=None):
     success = True
     initial = True
     show_landmarks = False
-    delay = 0
-    human_name = None
-
 
     while success:
         if initial:
@@ -325,40 +323,28 @@ def display_video(mode='normal', name=None):
             iou, box = face
             # check if inside crosshairs
             # if true change crosshair color and increase thickness else draw box around face
-            if iou > iou_threshold or True:
-                crosshair_color = (0, 255, 0)
-                thickness = 4
+            #if iou > iou_threshold or True:
+            crosshair_color = (0, 255, 0)
+            thickness = 4
 
-                if mode == 'normal':
-                    # Pre-process and get facial encodingsq
-                    encoding = model.align_and_encode_face(frame, box, get_landmarks=show_landmarks)
+            if mode == 'normal':
+                # Pre-process and get facial encodingsq
+                encoding = model.align_and_encode_face(frame, box, get_landmarks=show_landmarks)
 
-                    if show_landmarks:
-                        encoding, landmarks = encoding
+                if show_landmarks:
+                    encoding, landmarks = encoding
 
-                        for k in landmarks.keys():
-                            for (x, y) in landmarks[k]:
-                                cv2.circle(frame, (x, y), 2, (0, 255, 0), -1)
+                    for k in landmarks.keys():
+                        for (x, y) in landmarks[k]:
+                            cv2.circle(frame, (x, y), 2, (0, 255, 0), -1)
 
-                    if delay == 0 or human_name is None:
-                        # Find simliarities between current user and all existing users
-                        human_name = model.find_similarity(encoding)
-                        delay = DELAY
-                    else:
-                        delay -= 1
+                # Find simliarities between current user and all existing users
+                human_name = model.find_similarity(encoding)
 
-                        # Display Recognized User's Name
-                    if human_name is None:
-                        cv2.putText(frame, "UNKNOWN", (int(frame_width / 3.5), int(frame_height / 5) - 15),
-                                    cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 170, 0), 1)
-                    else:
-                        human_name = human_name.replace('_', ' ')
-                        cv2.putText(frame, human_name, (int(frame_width / 3.5), int(frame_height / 5) - 15),
-                                    cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 170, 0), 1)
-            else:
                 x1, y1, x2, y2 = box
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                # cv2.putText(frame, confidence_level, (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
+                y = y1 - 10 if y1 - 10 > 10 else y1 + 10
+                cv2.putText(frame, human_name, (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
 
         # Legend
         cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 150), 1)
@@ -369,7 +355,7 @@ def display_video(mode='normal', name=None):
             cv2.putText(frame, "Position desired face in center of cross-hairs and press 'S'",
                         (int(frame_width / 5), frame_height - 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (100, 255, 0), 1)
 
-        draw_crosshairs(frame, frame_width, frame_height, crosshair_color, thickness)
+            draw_crosshairs(frame, frame_width, frame_height, crosshair_color, thickness)
         cv2.imshow('TrueSight', frame)
 
         # Quit video feed
