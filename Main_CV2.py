@@ -108,8 +108,8 @@ def login():
         root.overrideredirect(1)
         root.bind('<Escape>', quit)
 
-        eye_file = os.path.join('pics', 'title_test.gif')
-        bg_image = PhotoImage(file=eye_file)
+        title_file = os.path.join('pics', 'title.gif')
+        bg_image = PhotoImage(file=title_file)
         w = bg_image.width()
         h = bg_image.height()
         x = int((screen_width / 2) - (w / 2))
@@ -158,6 +158,7 @@ def menu():
     bg_label = Label(root, image=bg_image)
     bg_label.place(x=0, y=0, relwidth=1, relheight=1)
     root.title('TrueSight')
+    thumbnail = None
 
     def update_list(user_list):
         filenames = os.path.join('users', '*.txt')
@@ -305,9 +306,6 @@ def display_video(mode='normal', name=None):
     success = True
     initial = True
     show_landmarks = False
-    delay = 0
-    human_name = None
-
 
     while success:
         if initial:
@@ -320,42 +318,36 @@ def display_video(mode='normal', name=None):
         thickness = 2
 
         faces = model.get_faces(frame, crosshair_box)
+        encodings = np.zeros((len(faces), 128))
         # Loop over the detections
-        for face in faces:
-            iou, box = face
+        for f in range(len(faces)):
             # check if inside crosshairs
             # if true change crosshair color and increase thickness else draw box around face
-            if iou > iou_threshold:
-                crosshair_color = (0, 255, 0)
-                thickness = 4
+            #if iou > iou_threshold or True:
+            crosshair_color = (0, 255, 0)
+            thickness = 4
 
-                if mode == 'normal':
-                    # Pre-process and get facial encodingsq
-                    encoding = model.align_and_encode_face(frame, box, show_landmarks)
+            if mode == 'normal':
+                # Pre-process and get facial encodingsq
+                encodings[f], landmarks = model.align_and_encode_face(frame, faces[f][1], get_landmarks=show_landmarks)
 
-                    if show_landmarks:
-                        encoding, landmarks = encoding
+                if show_landmarks:
+                    for k in landmarks.keys():
+                        for (x, y) in landmarks[k]:
+                            cv2.circle(frame, (x, y), 2, (0, 255, 0), -1)
 
-                        for k in landmarks.keys():
-                            for (x, y) in landmarks[k]:
-                                cv2.circle(frame, (x, y), 2, (0, 255, 0), -1)
-
-                    if delay == 0 or human_name is None:
-                        # Find simliarities between current user and all existing users
-                        human_name = model.find_similarity(encoding)
-                        delay = DELAY
-                    else:
-                        delay -= 1
-
-            else:
-                x1, y1, x2, y2 = box
+        if mode == 'normal':
+            candidates = model.find_similarity(encodings, faces)
+            for h in range(len(candidates)):
+                x1, y1, x2, y2 = candidates[h][1]
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                # cv2.putText(frame, confidence_level, (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
+                y = y1 - 10 if y1 - 10 > 10 else y1 + 10
+                cv2.putText(frame, candidates[h][0], (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
 
         # Legend
-        cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 150), 1)
-        cv2.putText(frame, "s: Save", (frame_width - 80, 35), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 150), 1)
-        cv2.putText(frame, "q: Quit", (frame_width - 80, 55), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 150), 1)
+        cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 100), 1)
+        cv2.putText(frame, "s: Save", (frame_width - 80, 35), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 100), 1)
+        cv2.putText(frame, "q: Quit", (frame_width - 80, 55), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 100), 1)
 
         if mode == 'add_user':
             cv2.putText(frame, "Position desired face in center of cross-hairs and press 'S'",
@@ -385,10 +377,10 @@ def display_video(mode='normal', name=None):
             if mode == 'add_user':
                 user_name = name.replace(' ', '_')
                 filename = os.path.join('users', user_name + '.txt')
-                encoding = model.align_and_encode_face(frame, box, get_landmarks=False)
+                encoding = model.align_and_encode_face(frame, faces[0][1], get_landmarks=False)
                 np.savetxt(filename, encoding)
                 filename = os.path.join('users', str(user_name) + '.png')
-                cv2.imwrite(filename, cv2.resize(og_frame, (250,250), interpolation=cv2.INTER_AREA))
+                cv2.imwrite(filename, cv2.resize(og_frame, (250, 250), interpolation=cv2.INTER_AREA))
                 cap.release()
                 cv2.destroyAllWindows()
                 menu()
