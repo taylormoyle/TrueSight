@@ -19,7 +19,7 @@ class Model:
                  encoder_meta,
                  encoder_ckpt,
                  conf_threshold=0.5,
-                 rec_threshold=0.6):
+                 rec_threshold=0.4):
         self._load_detection_model(detection_prototxt, detection_model_file)
         self._load_landmark_model(landmark_model_file)
         self._load_encoder(encoder_meta, encoder_ckpt)
@@ -173,15 +173,18 @@ class Model:
 
         # crop out face
         cropped_frame = aligned_frame[y1:y2, x1:x2, :]
-        cv2.imshow('Cropped.png', cropped_frame)
+
+        # Segmentation
+
 
         # Resize (tensorflow pre-processing)
         resize_res = 160
         resized_frame = cv2.resize(cropped_frame, (resize_res, resize_res), interpolation=cv2.INTER_CUBIC)
+        cv2.imshow('Cropped.png', resized_frame)
 
         # Get current user encoding
         encoding = self._get_encoding(resized_frame)
-        return (encoding, landmarks) if get_landmarks else encoding
+        return (encoding, landmarks) if get_landmarks else (encoding, _)
 
     def detect_and_encode_face(self, image):
         img_width, img_height, _ = image.shape
@@ -202,26 +205,39 @@ class Model:
         root = np.sqrt(added)
         return root
 
-    def find_similarity(self, current_user):
+    def find_similarity(self, humans, boxes):
         filenames = os.path.join('users', '*.txt')
         users = glob(filenames)
+        similarities = np.zeros((len(humans), len(users)))
         encodings = np.zeros((len(users), 128))
+        candidates = [['UNKNOWN', b[1]] for b in boxes]
+        names = []
+
         if len(users) == 0:
-            return None
+            return candidates
+
         for i in range(len(users)):
             file = open(users[i])
             encoding = file.read().split()
             encodings[i] = np.array(encoding, dtype=np.float32)
             file.close()
-        similarity = self._calculate_similarity(encodings, current_user)
-        candidate = np.argmin(similarity)
-        print(similarity)
-        if similarity[candidate] < self.rec_threshold:
-            _, filename = os.path.split(users[candidate])
-            #print('Cand:', similarity[candidate])
-            return filename[:-4]
-        else:
-            return None
+            _, filename = os.path.split(users[i])
+            names.append(filename[:-4])
+
+        for human in range(len(humans)):
+            similarity = self._calculate_similarity(encodings, humans[human])
+            similarities[human] = similarity
+
+        print(similarities)
+
+        for s in range(len(similarities)):
+            i, j = np.unravel_index(similarities.argmin(), similarities.shape)
+            if similarities[i, j] < self.rec_threshold:
+                candidates[i][0] = names[j]
+            similarities[i, :] = 10.
+            similarities[:, j] = 10.
+
+        return candidates
 
     def clean_up(self):
         self.sess.close()
