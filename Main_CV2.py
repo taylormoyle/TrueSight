@@ -6,6 +6,7 @@ import time
 import numpy as np
 import glob
 import Models
+import math
 from PIL import ImageTk, Image
 
 RES = 300
@@ -201,7 +202,6 @@ def menu():
     def import_callback(entry_name, toplevel):
         user_name = entry_name.get()
         photo_filename = askopenfilename(title='Import')
-        print(photo_filename)
         photo = cv2.imread(photo_filename)
         photo = cv2.resize(photo, (RES, RES))
         encoding = model.detect_and_encode_face(photo)
@@ -328,7 +328,7 @@ def display_video(mode='normal', name=None):
             thickness = 4
 
             if mode == 'normal':
-                # Pre-process and get facial encodingsq
+                # Pre-process and get facial encodings
                 encodings[f], landmarks = model.align_and_encode_face(frame, faces[f][1], get_landmarks=show_landmarks)
 
                 if show_landmarks:
@@ -337,12 +337,34 @@ def display_video(mode='normal', name=None):
                             cv2.circle(frame, (x, y), 2, (0, 255, 0), -1)
 
         if mode == 'normal':
-            candidates = model.find_similarity(encodings, faces)
+            # Find similarity between real-time user and list of users
+            candidates, sims = model.find_similarity(encodings, faces)
+
+            # Display predicted user's name, along with the network's confidence (bar)
             for h in range(len(candidates)):
                 x1, y1, x2, y2 = candidates[h][1]
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
                 y = y1 - 10 if y1 - 10 > 10 else y1 + 10
                 cv2.putText(frame, candidates[h][0], (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
+                conf = sims[h]
+                min_conf = 0.1
+                max_conf = 0.4
+                diff = max_conf - min_conf
+                denom = diff * 0.1
+                num = math.floor(conf / denom)
+                if num > 7:
+                    bar_color = (0, 0, 255)
+                if 7 >= num >= 3:
+                    bar_color = (0, 255, 0)
+                if num < 3:
+                    bar_color = (255, 0, 0)
+                if num == 0:
+                    length = 0
+                else:
+                    length = math.floor(200 * (1 / num))
+                print(length)
+                x = x2 - length
+                cv2.line(frame, (x, y), (x2, y), bar_color, thickness=7)
 
         # Legend
         cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 100), 1)
@@ -377,8 +399,8 @@ def display_video(mode='normal', name=None):
             if mode == 'add_user':
                 user_name = name.replace(' ', '_')
                 filename = os.path.join('users', user_name + '.txt')
-                encoding = model.align_and_encode_face(frame, faces[0][1], get_landmarks=False)
-                np.savetxt(filename, encoding)
+                encodings, landmarks = model.align_and_encode_face(frame, faces[0][1], get_landmarks=False)
+                np.savetxt(filename, encodings)
                 filename = os.path.join('users', str(user_name) + '.png')
                 cv2.imwrite(filename, cv2.resize(og_frame, (250, 250), interpolation=cv2.INTER_AREA))
                 cap.release()
