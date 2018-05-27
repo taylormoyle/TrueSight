@@ -21,7 +21,7 @@ class Model:
                  encoder_meta,
                  encoder_ckpt,
                  conf_threshold=0.5,
-                 rec_threshold=0.75):
+                 rec_threshold=0.4):
         self._load_detection_model(detection_prototxt, detection_model_file)
         self._load_landmark_model(landmark_model_file)
         self._load_encoder(encoder_meta, encoder_ckpt)
@@ -114,10 +114,10 @@ class Model:
             gray = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
             gray_faces[f, :, :, 0] = gray_faces[f, :, :, 1] = gray_faces[f, :, :, 2] = gray
 
-        mean = np.mean(gray_faces, axis=(1,2), keepdims=True)
-        std = np.std(gray_faces, axis=(1,2), keepdims=True)
-        std = np.maximum(std, 1.0/np.sqrt(gray_faces[0].size))
-        gray_faces = np.multiply((gray_faces - mean), 1/std)
+        #mean = np.mean(gray_faces, axis=(1,2), keepdims=True)
+        #std = np.std(gray_faces, axis=(1,2), keepdims=True)
+        #std = np.maximum(std, 1.0/np.sqrt(gray_faces[0].size))
+        #gray_faces = np.multiply((gray_faces - mean), 1/std)
 
         #gray_frame = gray_frame.reshape(-1, 160, 160, 3)
 
@@ -178,9 +178,9 @@ class Model:
         if len(faces) == 0:
             return None
 
-        _, face = faces[0]
-        encoding, _ = self.align_and_encode_face(image, face)
-        return encoding
+        _ , face = faces[0]
+        aligned_face, _ = self.align_and_encode_face(image, face)
+        return self.get_encoding(aligned_face)[0]
 
     def _calculate_similarity(self, users, current_user):
         diff = users - current_user

@@ -192,6 +192,8 @@ def menu():
             username = user_list.get(selected[0]).replace(' ', '_')
             filename = os.path.join('users', username + '.txt')
             os.remove(filename)
+            filename = os.path.join('users', username + '.png')
+            os.remove(filename)
             user_list.delete(selected[0], selected[-1])
 
     def run_video():
@@ -202,7 +204,6 @@ def menu():
     def import_callback(entry_name, toplevel):
         user_name = entry_name.get()
         photo_filename = askopenfilename(title='Import')
-        print(photo_filename)
         photo = cv2.imread(photo_filename)
         photo = cv2.resize(photo, (RES, RES))
         encoding = model.detect_and_encode_face(photo)
@@ -307,6 +308,7 @@ def display_video(mode='normal', name=None):
     success, frame = cap.read()
     initial = True
     show_landmarks = False
+    confidence_bar = False
 
     while success:
         if initial:
@@ -362,13 +364,16 @@ def display_video(mode='normal', name=None):
                     bar_color = (0, 255, 0)
                 if num < 3:
                     bar_color = (255, 0, 0)
-                if num == 0:
+                if num <= 0:
                     length = 0
                 else:
-                    length = math.floor(200 * (1 / num))
+                    length = math.floor(150 * (1 / num))
+                print(conf)
                 print(length)
                 x = x2 - length
-                cv2.line(frame, (x, y), (x2, y), bar_color, thickness=7)
+
+                if confidence_bar:
+                    cv2.line(frame, (x, y), (x2, y), bar_color, thickness=5)
 
         # Legend
         cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 100), 1)
@@ -418,6 +423,9 @@ def display_video(mode='normal', name=None):
 
         if key & 0xFF == ord('l'):
             show_landmarks = not show_landmarks
+
+        if key & 0xFF == ord('c'):
+            confidence_bar = not confidence_bar
 
     # Clean up
     cap.release()
