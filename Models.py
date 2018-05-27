@@ -9,6 +9,8 @@ from glob import glob
 from Operations import intersection_over_union as IoU
 
 RES = 300
+ENCODE_RES = 160
+LEFTEYE = (0.3, 0.3)
 
 class Model:
 
@@ -101,21 +103,26 @@ class Model:
                      }
         return landmarks
 
-    def _get_encoding(self, frame):
-        #mean = np.mean(frame)
-        #std = np.std(frame)
-        #std = np.maximum(std, 1.0/np.sqrt(frame.size))
-        #norm_frame = np.multiply(np.subtract(frame, mean), 1/std)
-        #norm_frame = norm_frame.reshape(-1, 160, 160, 3)
+    def get_encoding(self, faces):
+        if len(faces.shape) < 4:
+            faces = faces.reshape(-1, 160, 160, 3)
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gray_frame = np.zeros_like(frame)
-        gray_frame[:, :, 0] = gray_frame[:, :, 1] = gray_frame[:, :, 2] = gray
-        gray_frame = gray_frame.reshape(-1, 160, 160, 3)
+        gray_faces = np.zeros_like(faces)
+        for f in range(len(faces)):
+            face = faces[f]
+            gray = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
+            gray_faces[f, :, :, 0] = gray_faces[f, :, :, 1] = gray_faces[f, :, :, 2] = gray
 
-        feed_dict = {self.image_placeholder: gray_frame, self.phase_train_placeholder: False}
+        #mean = np.mean(gray_faces, axis=(1,2), keepdims=True)
+        #std = np.std(gray_faces, axis=(1,2), keepdims=True)
+        #std = np.maximum(std, 1.0/np.sqrt(gray_faces[0].size))
+        #gray_faces = np.multiply((gray_faces - mean), 1/std)
+
+        #gray_frame = gray_frame.reshape(-1, 160, 160, 3)
+
+        feed_dict = {self.image_placeholder: gray_faces, self.phase_train_placeholder: False}
         embeddings = self.sess.run(self.encoder, feed_dict=feed_dict)
-        return embeddings[0]
+        return embeddings
 
     def align_and_encode_face(self, frame, box, get_landmarks=False):
         '''
@@ -124,66 +131,43 @@ class Model:
                  future, encoding of face once implemented
         '''
         frame_width, frame_height, _ = frame.shape
-
         landmarks = self.get_landmarks(frame, box)
-        nose_x, nose_y = landmarks['nose_tip'][0]
-        center_x, center_y = frame_width / 2, frame_height / 2
 
-        # draw linear regression line between outer eye corners
-        left_eye = landmarks['left_eye_corners'][0]
-        right_eye = landmarks['right_eye_corners'][0]
-        eye_orientation = (left_eye[0] - right_eye[0], left_eye[1] - right_eye[1])
+        # draw linear regression line between eyes
+        left_eye = np.mean(landmarks['left_eye'], axis=0).astype('int')
+        right_eye = np.mean(landmarks['right_eye'], axis=0).astype('int')
+        eye_orientation = (right_eye[0] - left_eye[0], right_eye[1] - left_eye[1])
         # get angle of regression line
-        angle_rad = math.atan2(float(eye_orientation[1]), float(eye_orientation[0]))
+        atan = np.arctan2(eye_orientation[1], eye_orientation[0]) - math.pi
+
+        right_eye_x = 1.0 - LEFTEYE[0]
+        eye_dist = np.sqrt(eye_orientation[0] ** 2 + eye_orientation[1] ** 2)
+        dist = (right_eye_x - LEFTEYE[0]) * ENCODE_RES
+        scale = dist / eye_dist
+
+        eye_center = ((left_eye[0] + right_eye[0]) // 2, (left_eye[1] + right_eye[1]) // 2)
 
         # build composite matrix
-        cosine = math.cos(angle_rad)
-        sine = math.sin(angle_rad)
-        shift_x = center_x - nose_x * cosine - nose_y * sine
-        shift_y = center_y - nose_x * -sine - nose_y * cosine
+        cosine = math.cos(atan)
+        sine = math.sin(atan)
+        alpha = scale * cosine
+        beta = scale * sine
+        t_x = (1 - alpha) * eye_center[0] - beta * eye_center[1]
+        t_y = beta * eye_center[0] + (1 - alpha) * eye_center[1]
+        t_x += (ENCODE_RES*0.5 - eye_center[0])
+        t_y += (ENCODE_RES*LEFTEYE[1] - eye_center[1])
 
-        P = np.float32([[cosine, sine, shift_x], [-sine, cosine, shift_y]])
+        P = np.float64([[alpha, beta, t_x],
+                        [-beta, alpha, t_y]])
 
         # apply composite matrix to image
-        aligned_frame = cv2.warpAffine(frame, P, (frame_width, frame_height))
+        aligned_frame = cv2.warpAffine(frame, P, (ENCODE_RES, ENCODE_RES), flags=cv2.INTER_CUBIC)
 
-        # Crop image
-        lbrow = landmarks['left_brow'][2]
-        rbrow = landmarks['right_brow'][2]
-
-        # get coordinates of face edges
-        brow_center = (int((rbrow[0] + lbrow[0]) / 2), int((rbrow[1] + lbrow[1]) / 2))
-        face_bottom = (landmarks['mouth'][8][0], int((landmarks['mouth'][8][1] + landmarks['jaw'][8][1]) / 2))
-        face_right = landmarks['jaw'][3]
-        face_left = landmarks['jaw'][14]
-
-        # calculate distance between each edge and nose
-        dist_top = math.sqrt((brow_center[0] - nose_x) ** 2 + ((brow_center[1] - nose_y) ** 2))
-        dist_bottom = math.sqrt((face_bottom[0] - nose_x) ** 2 + (face_bottom[1] - nose_y) ** 2)
-        dist_right = math.sqrt((face_right[0] - nose_x) ** 2 + (face_right[1] - nose_y) ** 2)
-        dist_left = math.sqrt((face_left[0] - nose_x) ** 2 + (face_right[1] - nose_y) ** 2)
-        dist_side = (dist_left + dist_right) / 2
-
-        # set new bbox dims
-        y1 = int(center_y - dist_top)
-        y2 = int(center_y + dist_bottom)
-        x1 = int(center_x - dist_side)
-        x2 = int(center_x + dist_side)
-
-        # crop out face
-        cropped_frame = aligned_frame[y1:y2, x1:x2, :]
-
-        # Segmentation
-
-
-        # Resize (tensorflow pre-processing)
-        resize_res = 160
-        resized_frame = cv2.resize(cropped_frame, (resize_res, resize_res), interpolation=cv2.INTER_CUBIC)
-        cv2.imshow('Cropped.png', resized_frame)
+        cv2.imshow('align', aligned_frame)
 
         # Get current user encoding
-        encoding = self._get_encoding(resized_frame)
-        return (encoding, landmarks) if get_landmarks else (encoding, _)
+        #encoding = self._get_encoding(aligned_frame)
+        return (aligned_frame, landmarks) if get_landmarks else (aligned_frame, _)
 
     def detect_and_encode_face(self, image):
         img_width, img_height, _ = image.shape
@@ -193,9 +177,10 @@ class Model:
         if len(faces) == 0:
             return None
 
-        _, face = faces[0]
-        encoding, landmarks = self.align_and_encode_face(image, face)
-        return encoding
+        _ , face = faces[0]
+        aligned_face, _ = self.align_and_encode_face(image, face)
+        return self.get_encoding(aligned_face)[0]
+
 
     def _calculate_similarity(self, users, current_user):
         diff = users - current_user

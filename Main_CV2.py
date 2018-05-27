@@ -3,6 +3,7 @@ from tkinter import *
 from tkinter.filedialog import askopenfilename
 import os
 import time
+import math
 import numpy as np
 import glob
 import Models
@@ -192,6 +193,8 @@ def menu():
             username = user_list.get(selected[0]).replace(' ', '_')
             filename = os.path.join('users', username + '.txt')
             os.remove(filename)
+            filename = os.path.join('users', username + '.png')
+            os.remove(filename)
             user_list.delete(selected[0], selected[-1])
 
     def run_video():
@@ -303,9 +306,10 @@ def display_video(mode='normal', name=None):
     frame_height = int(cap.get(4))
     crosshair_box = [int(frame_width / 3.5), int(frame_height / 5),
                      int(frame_width - frame_width / 3.5), int(frame_height - frame_height / 5)]
-    success = True
+    success, frame = cap.read()
     initial = True
     show_landmarks = False
+    confidence_bar = False
 
     while success:
         if initial:
@@ -318,6 +322,7 @@ def display_video(mode='normal', name=None):
         thickness = 2
 
         faces = model.get_faces(frame, crosshair_box)
+        aligned_faces = np.zeros((len(faces), Models.ENCODE_RES, Models.ENCODE_RES, 3))
         encodings = np.zeros((len(faces), 128))
         # Loop over the detections
         for f in range(len(faces)):
@@ -328,15 +333,18 @@ def display_video(mode='normal', name=None):
             thickness = 4
 
             if mode == 'normal':
+
                 # Pre-process and get facial encodings
-                encodings[f], landmarks = model.align_and_encode_face(frame, faces[f][1], get_landmarks=show_landmarks)
+                aligned_faces[f], landmarks = model.align_and_encode_face(frame, faces[f][1], get_landmarks=show_landmarks)
 
                 if show_landmarks:
                     for k in landmarks.keys():
                         for (x, y) in landmarks[k]:
                             cv2.circle(frame, (x, y), 2, (0, 255, 0), -1)
 
-        if mode == 'normal':
+        if len(faces) > 0:
+            encodings = model.get_encoding(aligned_faces.astype(np.uint8))
+
             # Find similarity between real-time user and list of users
             candidates, sims = model.find_similarity(encodings, faces)
 
@@ -358,13 +366,16 @@ def display_video(mode='normal', name=None):
                     bar_color = (0, 255, 0)
                 if num < 3:
                     bar_color = (255, 0, 0)
-                if num == 0:
+                if num <= 0:
                     length = 0
                 else:
-                    length = math.floor(200 * (1 / num))
+                    length = math.floor(150 * (1 / num))
+                print(conf)
                 print(length)
                 x = x2 - length
-                cv2.line(frame, (x, y), (x2, y), bar_color, thickness=7)
+
+                if confidence_bar:
+                    cv2.line(frame, (x, y), (x2, y), bar_color, thickness=5)
 
         # Legend
         cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 100), 1)
@@ -399,8 +410,11 @@ def display_video(mode='normal', name=None):
             if mode == 'add_user':
                 user_name = name.replace(' ', '_')
                 filename = os.path.join('users', user_name + '.txt')
-                encodings, landmarks = model.align_and_encode_face(frame, faces[0][1], get_landmarks=False)
-                np.savetxt(filename, encodings)
+
+                aligned, _ = model.align_and_encode_face(frame, faces[0][1], get_landmarks=False)
+                encoding = model.get_encoding(aligned)
+                np.savetxt(filename, encoding)
+
                 filename = os.path.join('users', str(user_name) + '.png')
                 cv2.imwrite(filename, cv2.resize(og_frame, (250, 250), interpolation=cv2.INTER_AREA))
                 cap.release()
@@ -414,6 +428,9 @@ def display_video(mode='normal', name=None):
         if key & 0xFF == ord('l'):
             show_landmarks = not show_landmarks
 
+        if key & 0xFF == ord('c'):
+            confidence_bar = not confidence_bar
+
     # Clean up
     cap.release()
     cv2.destroyAllWindows()
@@ -421,6 +438,6 @@ def display_video(mode='normal', name=None):
 
 
 screen_width, screen_height = set_screen_dim()
-login()
+#login()
 display_video()
 model.clean_up()
