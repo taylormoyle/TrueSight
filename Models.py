@@ -196,9 +196,10 @@ class Model:
         encodings = np.zeros((len(users), 128))
         candidates = [['UNKNOWN', b[1]] for b in boxes]
         names = []
+        sims = np.zeros(len(candidates))
 
         if len(users) == 0:
-            return candidates
+            return candidates, sims
 
         for i in range(len(users)):
             file = open(users[i])
@@ -212,16 +213,15 @@ class Model:
             similarity = self._calculate_similarity(encodings, humans[human])
             similarities[human] = similarity
 
-        print(similarities)
-
         for s in range(len(similarities)):
             i, j = np.unravel_index(similarities.argmin(), similarities.shape)
             if similarities[i, j] < self.rec_threshold:
                 candidates[i][0] = names[j]
+                sims[i] = similarities[i][j]
             similarities[i, :] = 10.
             similarities[:, j] = 10.
 
-        return candidates
+        return candidates, sims
 
     def clean_up(self):
         self.sess.close()

@@ -3,6 +3,7 @@ from tkinter import *
 from tkinter.filedialog import askopenfilename
 import os
 import time
+import math
 import numpy as np
 import glob
 import Models
@@ -340,13 +341,34 @@ def display_video(mode='normal', name=None):
         if len(faces) > 0:
             encodings = model.get_encoding(aligned_faces.astype(np.uint8))
 
-            if mode == 'normal':
-                candidates = model.find_similarity(encodings, faces)
-                for h in range(len(candidates)):
-                    x1, y1, x2, y2 = candidates[h][1]
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                    y = y1 - 10 if y1 - 10 > 10 else y1 + 10
-                    cv2.putText(frame, candidates[h][0], (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
+            # Find similarity between real-time user and list of users
+            candidates, sims = model.find_similarity(encodings, faces)
+
+            # Display predicted user's name, along with the network's confidence (bar)
+            for h in range(len(candidates)):
+                x1, y1, x2, y2 = candidates[h][1]
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                y = y1 - 10 if y1 - 10 > 10 else y1 + 10
+                cv2.putText(frame, candidates[h][0], (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
+                conf = sims[h]
+                min_conf = 0.1
+                max_conf = 0.4
+                diff = max_conf - min_conf
+                denom = diff * 0.1
+                num = math.floor(conf / denom)
+                if num > 7:
+                    bar_color = (0, 0, 255)
+                if 7 >= num >= 3:
+                    bar_color = (0, 255, 0)
+                if num < 3:
+                    bar_color = (255, 0, 0)
+                if num == 0:
+                    length = 0
+                else:
+                    length = math.floor(200 * (1 / num))
+                print(length)
+                x = x2 - length
+                cv2.line(frame, (x, y), (x2, y), bar_color, thickness=7)
 
         # Legend
         cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 100), 1)
