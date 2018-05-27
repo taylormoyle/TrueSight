@@ -303,7 +303,7 @@ def display_video(mode='normal', name=None):
     frame_height = int(cap.get(4))
     crosshair_box = [int(frame_width / 3.5), int(frame_height / 5),
                      int(frame_width - frame_width / 3.5), int(frame_height - frame_height / 5)]
-    success = True
+    success, frame = cap.read()
     initial = True
     show_landmarks = False
 
@@ -318,6 +318,7 @@ def display_video(mode='normal', name=None):
         thickness = 2
 
         faces = model.get_faces(frame, crosshair_box)
+        aligned_faces = np.zeros((len(faces), Models.ENCODE_RES, Models.ENCODE_RES, 3))
         encodings = np.zeros((len(faces), 128))
         # Loop over the detections
         for f in range(len(faces)):
@@ -329,20 +330,23 @@ def display_video(mode='normal', name=None):
 
             if mode == 'normal':
                 # Pre-process and get facial encodingsq
-                encodings[f], landmarks = model.align_and_encode_face(frame, faces[f][1], get_landmarks=show_landmarks)
+                aligned_faces[f], landmarks = model.align_and_encode_face(frame, faces[f][1], get_landmarks=show_landmarks)
 
                 if show_landmarks:
                     for k in landmarks.keys():
                         for (x, y) in landmarks[k]:
                             cv2.circle(frame, (x, y), 2, (0, 255, 0), -1)
 
-        if mode == 'normal':
-            candidates = model.find_similarity(encodings, faces)
-            for h in range(len(candidates)):
-                x1, y1, x2, y2 = candidates[h][1]
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                y = y1 - 10 if y1 - 10 > 10 else y1 + 10
-                cv2.putText(frame, candidates[h][0], (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
+        if len(faces) > 0:
+            encodings = model.get_encoding(aligned_faces.astype(np.uint8))
+
+            if mode == 'normal':
+                candidates = model.find_similarity(encodings, faces)
+                for h in range(len(candidates)):
+                    x1, y1, x2, y2 = candidates[h][1]
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                    y = y1 - 10 if y1 - 10 > 10 else y1 + 10
+                    cv2.putText(frame, candidates[h][0], (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
 
         # Legend
         cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 100), 1)
@@ -377,7 +381,8 @@ def display_video(mode='normal', name=None):
             if mode == 'add_user':
                 user_name = name.replace(' ', '_')
                 filename = os.path.join('users', user_name + '.txt')
-                encoding = model.align_and_encode_face(frame, faces[0][1], get_landmarks=False)
+                aligned, _ = model.align_and_encode_face(frame, faces[0][1], get_landmarks=False)
+                encoding = model.get_encoding(aligned)
                 np.savetxt(filename, encoding)
                 filename = os.path.join('users', str(user_name) + '.png')
                 cv2.imwrite(filename, cv2.resize(og_frame, (250, 250), interpolation=cv2.INTER_AREA))
@@ -399,6 +404,6 @@ def display_video(mode='normal', name=None):
 
 
 screen_width, screen_height = set_screen_dim()
-login()
+#login()
 display_video()
 model.clean_up()
