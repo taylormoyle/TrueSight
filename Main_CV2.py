@@ -7,6 +7,7 @@ import math
 import numpy as np
 import glob
 import Models
+import math
 from PIL import ImageTk, Image
 
 RES = 300
@@ -332,7 +333,8 @@ def display_video(mode='normal', name=None):
             thickness = 4
 
             if mode == 'normal':
-                # Pre-process and get facial encodingsq
+
+                # Pre-process and get facial encodings
                 aligned_faces[f], landmarks = model.align_and_encode_face(frame, faces[f][1], get_landmarks=show_landmarks)
 
                 if show_landmarks:
@@ -408,9 +410,11 @@ def display_video(mode='normal', name=None):
             if mode == 'add_user':
                 user_name = name.replace(' ', '_')
                 filename = os.path.join('users', user_name + '.txt')
+
                 aligned, _ = model.align_and_encode_face(frame, faces[0][1], get_landmarks=False)
                 encoding = model.get_encoding(aligned)
                 np.savetxt(filename, encoding)
+
                 filename = os.path.join('users', str(user_name) + '.png')
                 cv2.imwrite(filename, cv2.resize(og_frame, (250, 250), interpolation=cv2.INTER_AREA))
                 cap.release()

@@ -61,7 +61,6 @@ class Model:
         # Loop over the detections
         for i in range(0, detections.shape[2]):
             confidence = detections[0, 0, i, 2]
-
             # Ignore ones with conf below threshold
             if confidence < self.conf_threshold:
                 continue
@@ -181,6 +180,7 @@ class Model:
         _ , face = faces[0]
         aligned_face, _ = self.align_and_encode_face(image, face)
         return self.get_encoding(aligned_face)[0]
+
 
     def _calculate_similarity(self, users, current_user):
         diff = users - current_user
