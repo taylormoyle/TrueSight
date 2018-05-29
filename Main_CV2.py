@@ -324,58 +324,57 @@ def display_video(mode='normal', name=None):
         faces = model.get_faces(frame, crosshair_box)
         aligned_faces = np.zeros((len(faces), Models.ENCODE_RES, Models.ENCODE_RES, 3))
         encodings = np.zeros((len(faces), 128))
-        # Loop over the detections
-        for f in range(len(faces)):
-            # check if inside crosshairs
-            # if true change crosshair color and increase thickness else draw box around face
-            #if iou > iou_threshold or True:
-            crosshair_color = (0, 255, 0)
-            thickness = 4
 
-            if mode == 'normal':
+        if mode == 'normal':
+            # Loop over the detections
+            for f in range(len(faces)):
+                # check if inside crosshairs
+                # if true change crosshair color and increase thickness else draw box around face
+                #if iou > iou_threshold or True:
+                crosshair_color = (0, 255, 0)
+                thickness = 4
 
                 # Pre-process and get facial encodings
-                aligned_faces[f], landmarks = model.align_and_encode_face(frame, faces[f][1], get_landmarks=show_landmarks)
+                aligned_faces[f], landmarks = model.align_face(frame, faces[f][1], get_landmarks=show_landmarks)
 
                 if show_landmarks:
-                    for k in landmarks.keys():
-                        for (x, y) in landmarks[k]:
-                            cv2.circle(frame, (x, y), 2, (0, 255, 0), -1)
+                    for (x, y) in landmarks:
+                        cv2.circle(frame, (x, y), 2, (0, 255, 0), -1)
 
-        if len(faces) > 0:
-            encodings = model.get_encoding(aligned_faces.astype(np.uint8))
+            if len(faces) > 0:
+                encodings = model.get_encoding(aligned_faces.astype(np.uint8))
 
-            # Find similarity between real-time user and list of users
-            candidates, sims = model.find_similarity(encodings, faces)
+                # Find similarity between real-time user and list of users
+                candidates, sims = model.find_similarity(encodings, faces)
 
-            # Display predicted user's name, along with the network's confidence (bar)
-            for h in range(len(candidates)):
-                x1, y1, x2, y2 = candidates[h][1]
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                y = y1 - 10 if y1 - 10 > 10 else y1 + 10
-                cv2.putText(frame, candidates[h][0], (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
-                conf = sims[h]
-                min_conf = 0.1
-                max_conf = 0.4
-                diff = max_conf - min_conf
-                denom = diff * 0.1
-                num = math.floor(conf / denom)
-                if num > 7:
-                    bar_color = (0, 0, 255)
-                if 7 >= num >= 3:
-                    bar_color = (0, 255, 0)
-                if num < 3:
-                    bar_color = (255, 0, 0)
-                if num <= 0:
-                    length = 0
-                else:
-                    length = math.floor(150 * (1 / num))
-                print(conf)
-                print(length)
-                x = x2 - length
+                # Display predicted user's name, along with the network's confidence (bar)
+                for h in range(len(candidates)):
+                    x1, y1, x2, y2 = candidates[h][1]
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                    y = y1 - 10 if y1 - 10 > 10 else y1 + 10
+                    cv2.putText(frame, candidates[h][0], (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
+                    conf = sims[h]
+                    min_conf = 0.1
+                    max_conf = 0.4
+                    diff = max_conf - min_conf
+                    denom = diff * 0.1
+                    num = math.floor(conf / denom)
+                    if num > 7:
+                        bar_color = (0, 0, 255)
+                    if 7 >= num >= 3:
+                        bar_color = (0, 255, 0)
+                    if num < 3:
+                        bar_color = (255, 0, 0)
+                    if num <= 0:
+                        length = 0
+                    else:
+                        length = math.floor(150 * (1 / num))
+                    print(conf)
+                    print(length)
+                    x = x2 - length
 
-                if confidence_bar:
-                    cv2.line(frame, (x, y), (x2, y), bar_color, thickness=5)
+                    if confidence_bar:
+                        cv2.line(frame, (x, y), (x2, y), bar_color, thickness=5)
 
         # Legend
         cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 100), 1)
@@ -411,7 +410,7 @@ def display_video(mode='normal', name=None):
                 user_name = name.replace(' ', '_')
                 filename = os.path.join('users', user_name + '.txt')
 
-                aligned, _ = model.align_and_encode_face(frame, faces[0][1], get_landmarks=False)
+                aligned, _ = model.align_face(frame, faces[0][1], get_landmarks=False)
                 encoding = model.get_encoding(aligned)
                 np.savetxt(filename, encoding)
 

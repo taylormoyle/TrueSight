@@ -10,18 +10,30 @@ from Operations import intersection_over_union as IoU
 
 RES = 300
 ENCODE_RES = 160
-LEFTEYE = (0.3, 0.3)
+LEFTEYE = (0.32, 0.2)
+
+LANDMARK_IDX = {'nose': (27,36),
+                'right_eye': (36,42),
+                'left_eye': (42,48),
+                'right_brow': (17,22),
+                'left_brow': (22,27),
+                'mouth': (48,-1),
+                'jaw': (0,17),
+                'nose_tip': (33),
+                'right_eye_corners': (36,39),
+                'left_eye_corners': (45,42)
+                }
 
 class Model:
 
     def __init__(self,
-                 detection_prototxt,
-                 detection_model_file,
-                 landmark_model_file,
-                 encoder_meta,
-                 encoder_ckpt,
+                 detection_prototxt=None,
+                 detection_model_file=None,
+                 landmark_model_file=None,
+                 encoder_meta=None,
+                 encoder_ckpt=None,
                  conf_threshold=0.5,
-                 rec_threshold=0.4):
+                 rec_threshold=0.5):
         self._load_detection_model(detection_prototxt, detection_model_file)
         self._load_landmark_model(landmark_model_file)
         self._load_encoder(encoder_meta, encoder_ckpt)
@@ -30,22 +42,33 @@ class Model:
 
     # Load Detection and Landmark Models
     def _load_detection_model(self, prototxt, detection_model_file):
-        self.detector = cv2.dnn.readNetFromCaffe(prototxt, detection_model_file)
+        if prototxt is not None and detection_model_file is not None:
+            self.detector = cv2.dnn.readNetFromCaffe(prototxt, detection_model_file)
+        else:
+            self.detector = None
 
     def _load_landmark_model(self, landmark_model_file):
-        self.landmarker = dlib.shape_predictor(landmark_model_file)
+        if landmark_model_file is not None:
+            self.landmarker = dlib.shape_predictor(landmark_model_file)
+        else:
+            self.landmarker = None
 
     # Load Tensorflow Session
     def _load_encoder(self, encoder_meta, encoder_ckpt):
-        gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.6)
-        self.sess = tf.InteractiveSession(config=tf.ConfigProto(gpu_options=gpu_options))
-        saver = tf.train.import_meta_graph(encoder_meta)
-        saver.restore(self.sess, encoder_ckpt)
-        self.encoder = tf.get_default_graph().get_tensor_by_name('embeddings:0')
-        self.image_placeholder = tf.get_default_graph().get_tensor_by_name('input:0')
-        self.phase_train_placeholder = tf.get_default_graph().get_tensor_by_name('phase_train:0')
+        if encoder_ckpt is not None and encoder_meta is not None:
+            gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.6)
+            self.sess = tf.InteractiveSession(config=tf.ConfigProto(gpu_options=gpu_options))
+            saver = tf.train.import_meta_graph(encoder_meta)
+            saver.restore(self.sess, encoder_ckpt)
+            self.encoder = tf.get_default_graph().get_tensor_by_name('embeddings:0')
+            self.image_placeholder = tf.get_default_graph().get_tensor_by_name('input:0')
+            self.phase_train_placeholder = tf.get_default_graph().get_tensor_by_name('phase_train:0')
+        else:
+            self.encoder = None
 
-    def get_faces(self, frame, crosshairs):
+    def get_faces(self, frame, crosshairs=None):
+        if self.detector is None:
+            return None
         h, w, _ = frame.shape
         resized_frame = cv2.resize(frame, (RES, RES), interpolation=cv2.INTER_AREA)
 
@@ -70,7 +93,7 @@ class Model:
             x1, y1, x2, y2 = box
 
             # calculate the IoU
-            iou = IoU(crosshairs, box) if crosshairs else None
+            iou = IoU(crosshairs, box) if crosshairs is not None else None
 
             # package
             predictions.append((iou, box))
@@ -78,6 +101,8 @@ class Model:
         return predictions
 
     def get_landmarks(self, frame, box):
+        if self.landmarker is None:
+            return None
 
         x1, y1, x2, y2 = box
         rect = dlib.rectangle(x1, y1, x2, y2)
@@ -85,25 +110,16 @@ class Model:
         # get landmark shape and extract coordinates
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         shape = self.landmarker(gray_frame, rect)
-        coordinates = []
+        landmark_coords = []
         for i in range(68):
-            coordinates.append((shape.part(i).x, shape.part(i).y))
+            landmark_coords.append([shape.part(i).x, shape.part(i).y])
 
-        # build dictionary with keypoints
-        landmarks = {'nose': coordinates[27:35],
-                     'right_eye': coordinates[36:41],
-                     'left_eye': coordinates[42:47],
-                     'right_brow': coordinates[17:21],
-                     'left_brow': coordinates[22:26],
-                     'mouth': coordinates[48:],
-                     'jaw': coordinates[:16],
-                     'nose_tip': [coordinates[33]],
-                     'right_eye_corners': [coordinates[36], coordinates[39]],
-                     'left_eye_corners': [coordinates[45], coordinates[42]]
-                     }
-        return landmarks
+        return landmark_coords
 
     def get_encoding(self, faces):
+        if self.encoder is None:
+            return None
+
         if len(faces.shape) < 4:
             faces = faces.reshape(-1, 160, 160, 3)
 
@@ -113,18 +129,49 @@ class Model:
             gray = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
             gray_faces[f, :, :, 0] = gray_faces[f, :, :, 1] = gray_faces[f, :, :, 2] = gray
 
-        #mean = np.mean(gray_faces, axis=(1,2), keepdims=True)
-        #std = np.std(gray_faces, axis=(1,2), keepdims=True)
-        #std = np.maximum(std, 1.0/np.sqrt(gray_faces[0].size))
-        #gray_faces = np.multiply((gray_faces - mean), 1/std)
-
-        #gray_frame = gray_frame.reshape(-1, 160, 160, 3)
+        mean = np.mean(gray_faces, axis=(1,2,3), keepdims=True)
+        std = np.std(gray_faces, axis=(1,2,3), keepdims=True)
+        std = np.maximum(std, 1.0/np.sqrt(gray_faces[0].size))
+        gray_faces = np.multiply((gray_faces - mean), 1/std)
 
         feed_dict = {self.image_placeholder: gray_faces, self.phase_train_placeholder: False}
         embeddings = self.sess.run(self.encoder, feed_dict=feed_dict)
         return embeddings
 
-    def align_and_encode_face(self, frame, box, get_landmarks=False):
+    def _crop_face(self, aligned_frame, comp_matrix, landmarks):
+        ldmk = np.ones((len(landmarks), 3), dtype=np.int32)
+        ldmk[:, 0:2] = landmarks
+
+        poly_pts = np.matmul(comp_matrix, ldmk.transpose())
+        poly_pts = poly_pts.transpose().astype(np.int32)
+
+        mask = np.zeros_like(aligned_frame)
+        jaw_idx = LANDMARK_IDX['jaw']
+        lb_idx = LANDMARK_IDX['left_brow']
+        rb_idx = LANDMARK_IDX['right_brow']
+        jaw = np.array(poly_pts[jaw_idx[0]:jaw_idx[1]], dtype=np.int32)
+        left_brow = np.array(poly_pts[lb_idx[0]:lb_idx[1]][::-1], dtype=np.int32)
+        right_brow = np.array(poly_pts[rb_idx[0]:rb_idx[1]][::-1], dtype=np.int32)
+
+        pad = 5
+        # pad jaw
+        jaw[:9] -= [pad,0]
+        jaw[9] += [0,pad]
+        jaw[10:] += [pad,0]
+
+        left_brow -= [0, pad]
+        right_brow -= [0, pad]
+
+        roi = np.vstack((jaw, left_brow[:-1], right_brow[1:])).reshape(1, -1, 2)
+        mask_color = (255, 255, 255)
+        cv2.fillPoly(mask, roi, mask_color)
+
+        cropped_face = cv2.bitwise_and(aligned_frame, mask)
+        cv2.imshow('cropped', cropped_face)
+
+        return cropped_face
+
+    def align_face(self, frame, box, get_landmarks=False):
         '''
         align face in image and encode it
         :return: currently, cropped and aligned face
@@ -133,9 +180,14 @@ class Model:
         frame_width, frame_height, _ = frame.shape
         landmarks = self.get_landmarks(frame, box)
 
+        if landmarks is None:
+            return None
+
         # draw linear regression line between eyes
-        left_eye = np.mean(landmarks['left_eye'], axis=0).astype('int')
-        right_eye = np.mean(landmarks['right_eye'], axis=0).astype('int')
+        le_idx = LANDMARK_IDX['left_eye']
+        re_idx = LANDMARK_IDX['right_eye']
+        left_eye = np.mean(landmarks[le_idx[0]:le_idx[1]], axis=0).astype('int')
+        right_eye = np.mean(landmarks[re_idx[0]:re_idx[1]], axis=0).astype('int')
         eye_orientation = (right_eye[0] - left_eye[0], right_eye[1] - left_eye[1])
         # get angle of regression line
         atan = np.arctan2(eye_orientation[1], eye_orientation[0]) - math.pi
@@ -163,11 +215,9 @@ class Model:
         # apply composite matrix to image
         aligned_frame = cv2.warpAffine(frame, P, (ENCODE_RES, ENCODE_RES), flags=cv2.INTER_CUBIC)
 
-        cv2.imshow('align', aligned_frame)
+        cropped_face = self._crop_face(aligned_frame, P, landmarks)
 
-        # Get current user encoding
-        #encoding = self._get_encoding(aligned_frame)
-        return (aligned_frame, landmarks) if get_landmarks else (aligned_frame, _)
+        return (cropped_face, landmarks) if get_landmarks else (cropped_face, _)
 
     def detect_and_encode_face(self, image):
         img_width, img_height, _ = image.shape
@@ -178,7 +228,7 @@ class Model:
             return None
 
         _ , face = faces[0]
-        aligned_face, _ = self.align_and_encode_face(image, face)
+        aligned_face, _ = self.align_face(image, face)
         return self.get_encoding(aligned_face)[0]
 
 
