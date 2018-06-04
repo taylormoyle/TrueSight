@@ -131,6 +131,7 @@ class Model:
             gray_faces[f, :, :, 0] = gray_faces[f, :, :, 1] = gray_faces[f, :, :, 2] = gray
         '''
 
+        '''
         summed = np.sum(faces, axis=(1,2,3), keepdims=True)
         num_non_zeros = np.sum((faces != 0).astype(int), axis=(1,2,3), keepdims=True)
         mean = summed / num_non_zeros
@@ -139,8 +140,9 @@ class Model:
         std = np.sqrt(variance)
         std = np.maximum(std, 1.0/np.sqrt(faces[0].size))
         norm_faces = np.multiply((faces - mean), 1/std)
+        '''
 
-        feed_dict = {self.image_placeholder: norm_faces, self.phase_train_placeholder: False}
+        feed_dict = {self.image_placeholder: faces, self.phase_train_placeholder: False}
         embeddings = self.sess.run(self.encoder, feed_dict=feed_dict)
         return embeddings
 
@@ -221,14 +223,7 @@ class Model:
         # apply composite matrix to image
         aligned_frame = cv2.warpAffine(frame, P, (ENCODE_RES, ENCODE_RES), flags=cv2.INTER_CUBIC)
 
-        # normalize **** temp ****
-        mean = np.mean(aligned_frame)
-        std = np.std(aligned_frame)
-        std = np.maximum(std, 1.0/np.sqrt(aligned_frame.size))
-        norm_face = np.multiply((aligned_frame - mean), 1/std)
-
-
-        cropped_face = self._crop_face(norm_face, P, landmarks)
+        cropped_face = self._crop_face(aligned_frame, P, landmarks)
 
         return (cropped_face, landmarks) if get_landmarks else (cropped_face, _)
 
