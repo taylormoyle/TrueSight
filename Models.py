@@ -123,18 +123,24 @@ class Model:
         if len(faces.shape) < 4:
             faces = faces.reshape(-1, 160, 160, 3)
 
+        '''
         gray_faces = np.zeros_like(faces)
         for f in range(len(faces)):
             face = faces[f]
             gray = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
             gray_faces[f, :, :, 0] = gray_faces[f, :, :, 1] = gray_faces[f, :, :, 2] = gray
+        '''
 
-        mean = np.mean(gray_faces, axis=(1,2,3), keepdims=True)
-        std = np.std(gray_faces, axis=(1,2,3), keepdims=True)
-        std = np.maximum(std, 1.0/np.sqrt(gray_faces[0].size))
-        gray_faces = np.multiply((gray_faces - mean), 1/std)
+        summed = np.sum(faces, axis=(1,2,3), keepdims=True)
+        num_non_zeros = np.sum((faces != 0).astype(int), axis=(1,2,3), keepdims=True)
+        mean = summed / num_non_zeros
 
-        feed_dict = {self.image_placeholder: gray_faces, self.phase_train_placeholder: False}
+        variance = np.square(np.sum(faces[(faces != 0)] - mean, axis=(1,2,3), keepdims=True)) / num_non_zeros
+        std = np.sqrt(variance)
+        std = np.maximum(std, 1.0/np.sqrt(faces[0].size))
+        norm_faces = np.multiply((faces - mean), 1/std)
+
+        feed_dict = {self.image_placeholder: norm_faces, self.phase_train_placeholder: False}
         embeddings = self.sess.run(self.encoder, feed_dict=feed_dict)
         return embeddings
 
@@ -215,7 +221,14 @@ class Model:
         # apply composite matrix to image
         aligned_frame = cv2.warpAffine(frame, P, (ENCODE_RES, ENCODE_RES), flags=cv2.INTER_CUBIC)
 
-        cropped_face = self._crop_face(aligned_frame, P, landmarks)
+        # normalize **** temp ****
+        mean = np.mean(aligned_frame)
+        std = np.std(aligned_frame)
+        std = np.maximum(std, 1.0/np.sqrt(aligned_frame.size))
+        norm_face = np.multiply((aligned_frame - mean), 1/std)
+
+
+        cropped_face = self._crop_face(norm_face, P, landmarks)
 
         return (cropped_face, landmarks) if get_landmarks else (cropped_face, _)
 
@@ -242,7 +255,7 @@ class Model:
     def find_similarity(self, humans, boxes):
         filenames = os.path.join('users', '*.txt')
         users = glob(filenames)
-        similarities = np.zeros((len(humans), len(users)))
+        similarities = np.zeros((len(humans), len(users))) + self.rec_threshold
         encodings = np.zeros((len(users), 128))
         candidates = [['UNKNOWN', b[1]] for b in boxes]
         names = []

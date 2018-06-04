@@ -160,7 +160,9 @@ def menu():
     bg_label = Label(root, image=bg_image)
     bg_label.place(x=0, y=0, relwidth=1, relheight=1)
     root.title('TrueSight')
-    thumbnail = None
+    thumbnail = Label(root, image='', borderwidth=4, highlightthickness=3, relief='sunken')
+    thumbnail.grid(column=0, row=5, padx=30, pady=10)
+    thumbnail.grid_forget()
 
     def update_list(user_list):
         filenames = os.path.join('users', '*.txt')
@@ -196,6 +198,7 @@ def menu():
             filename = os.path.join('users', username + '.png')
             os.remove(filename)
             user_list.delete(selected[0], selected[-1])
+            thumbnail.grid_remove()
 
     def run_video():
         root.quit()
@@ -238,10 +241,10 @@ def menu():
                 selected_name = user_list.get(selected[0]).replace(' ', '_')
                 if user_name == selected_name:
                     img = ImageTk.PhotoImage(file=user)
-                    thumbnail = Label(root, image=img, borderwidth=4, highlightthickness=3, relief='sunken')
                     thumbnail.image = img
-                    thumbnail.grid(column=0, row=5, padx=30, pady=10)
-                    thumbnail.config(width=250, height=250)
+                    thumbnail.config(image=img, width=250, height=250)
+                    thumbnail.grid()
+
 
     scrollbar = Scrollbar(root)
     scrollbar.grid(column=5, row=0, sticky=N + S, pady=10, rowspan=5)
@@ -310,7 +313,9 @@ def display_video(mode='normal', name=None):
     initial = True
     show_landmarks = False
     confidence_bar = False
+    help_text = None
 
+    print('video')
     while success:
         if initial:
             #cv2.moveWindow('TrueSight', int((screen_width - video_size) / 2), int((screen_height - video_size) / 2))
@@ -376,18 +381,6 @@ def display_video(mode='normal', name=None):
                     if confidence_bar:
                         cv2.line(frame, (x, y), (x2, y), bar_color, thickness=5)
 
-        # Legend
-        cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 100), 1)
-        cv2.putText(frame, "s: Save", (frame_width - 80, 35), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 100), 1)
-        cv2.putText(frame, "q: Quit", (frame_width - 80, 55), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 100), 1)
-
-        if mode == 'add_user':
-            cv2.putText(frame, "Position desired face in center of cross-hairs and press 'S'",
-                        (int(frame_width / 5), frame_height - 40), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (100, 255, 0), 1)
-
-            draw_crosshairs(frame, frame_width, frame_height, crosshair_color, thickness)
-        cv2.imshow('TrueSight', frame)
-
         # Quit video feed
         key = cv2.waitKey(1)
         if key & 0xFF == ord('q'):
@@ -407,19 +400,25 @@ def display_video(mode='normal', name=None):
         # Take a picture
         if key & 0xFF == ord('s'):
             if mode == 'add_user':
-                user_name = name.replace(' ', '_')
-                filename = os.path.join('users', user_name + '.txt')
+                help_text = ''
+                if len(faces) > 1:
+                    help_text += 'Too many faces detected. Please ask others to move.'
+                elif len(faces) < 1:
+                    help_text += 'No face detected.'
+                else:
+                    user_name = name.replace(' ', '_')
+                    filename = os.path.join('users', user_name + '.txt')
 
-                aligned, _ = model.align_face(frame, faces[0][1], get_landmarks=False)
-                encoding = model.get_encoding(aligned)
-                np.savetxt(filename, encoding)
+                    aligned, _ = model.align_face(frame, faces[0][1], get_landmarks=False)
+                    encoding = model.get_encoding(aligned)
+                    np.savetxt(filename, encoding)
 
-                filename = os.path.join('users', str(user_name) + '.png')
-                cv2.imwrite(filename, cv2.resize(og_frame, (250, 250), interpolation=cv2.INTER_AREA))
-                cap.release()
-                cv2.destroyAllWindows()
-                menu()
-                break
+                    filename = os.path.join('users', str(user_name) + '.png')
+                    cv2.imwrite(filename, cv2.resize(og_frame, (250, 250), interpolation=cv2.INTER_AREA))
+                    cap.release()
+                    cv2.destroyAllWindows()
+                    menu()
+                    break
             else:
                 filename = os.path.join('frames', str(time.time() * 1000) + '.png')
                 cv2.imwrite(filename, og_frame)
@@ -429,6 +428,26 @@ def display_video(mode='normal', name=None):
 
         if key & 0xFF == ord('c'):
             confidence_bar = not confidence_bar
+
+        # Legend
+        cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 100), 1)
+        cv2.putText(frame, "s: Save", (frame_width - 80, 35), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 100), 1)
+        cv2.putText(frame, "q: Quit", (frame_width - 80, 55), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 100), 1)
+
+        if mode == 'add_user':
+            instruc = "Position desired face in center of cross-hairs and press 'S'"
+            text_size = cv2.getTextSize(instruc, cv2.FONT_HERSHEY_TRIPLEX, 0.6, 1)
+            in_x, in_y = (int(frame_width / 5), frame_height - 40)
+            cv2.putText(frame, instruc,(in_x, in_y) ,
+                        cv2.FONT_HERSHEY_TRIPLEX, 0.6, (100, 255, 0), 1)
+            if help_text is not None:
+                ht_size = cv2.getTextSize(help_text, cv2.FONT_HERSHEY_TRIPLEX, 0.6, 1)
+                ht_x, ht_y = (in_x, in_y + ht_size[0][1] + 10   )
+                cv2.putText(frame, help_text, (ht_x, ht_y),
+                            cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 170, 0), 1)
+
+            draw_crosshairs(frame, frame_width, frame_height, crosshair_color, thickness)
+        cv2.imshow('TrueSight', frame)
 
     # Clean up
     cap.release()
