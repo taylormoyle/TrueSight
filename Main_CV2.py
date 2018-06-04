@@ -314,8 +314,9 @@ def display_video(mode='normal', name=None):
     show_landmarks = False
     confidence_bar = False
     help_text = None
+    candidates, sims = None, None
+    delay = 0
 
-    print('video')
     while success:
         if initial:
             #cv2.moveWindow('TrueSight', int((screen_width - video_size) / 2), int((screen_height - video_size) / 2))
@@ -347,10 +348,12 @@ def display_video(mode='normal', name=None):
                         cv2.circle(frame, (x, y), 2, (0, 255, 0), -1)
 
             if len(faces) > 0:
-                encodings = model.get_encoding(aligned_faces.astype(np.uint8))
+                if delay <= 0:
+                    encodings = model.get_encoding(aligned_faces.astype(np.uint8))
 
-                # Find similarity between real-time user and list of users
-                candidates, sims = model.find_similarity(encodings, faces)
+                    # Find similarity between real-time user and list of users
+                    candidates, sims = model.find_similarity(encodings, faces)
+                    delay = DELAY
 
                 # Display predicted user's name, along with the network's confidence (bar)
                 for h in range(len(candidates)):
@@ -448,6 +451,7 @@ def display_video(mode='normal', name=None):
 
             draw_crosshairs(frame, frame_width, frame_height, crosshair_color, thickness)
         cv2.imshow('TrueSight', frame)
+        delay -= 1
 
     # Clean up
     cap.release()

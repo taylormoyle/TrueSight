@@ -10,7 +10,7 @@ from Operations import intersection_over_union as IoU
 
 RES = 300
 ENCODE_RES = 160
-LEFTEYE = (0.32, 0.2)
+LEFTEYE = (0.25, 0.2)
 
 LANDMARK_IDX = {'nose': (27,36),
                 'right_eye': (36,42),
@@ -33,7 +33,7 @@ class Model:
                  encoder_meta=None,
                  encoder_ckpt=None,
                  conf_threshold=0.5,
-                 rec_threshold=0.5):
+                 rec_threshold=0.52):
         self._load_detection_model(detection_prototxt, detection_model_file)
         self._load_landmark_model(landmark_model_file)
         self._load_encoder(encoder_meta, encoder_ckpt)
@@ -124,14 +124,6 @@ class Model:
             faces = faces.reshape(-1, 160, 160, 3)
 
         '''
-        gray_faces = np.zeros_like(faces)
-        for f in range(len(faces)):
-            face = faces[f]
-            gray = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
-            gray_faces[f, :, :, 0] = gray_faces[f, :, :, 1] = gray_faces[f, :, :, 2] = gray
-        '''
-
-        '''
         summed = np.sum(faces, axis=(1,2,3), keepdims=True)
         num_non_zeros = np.sum((faces != 0).astype(int), axis=(1,2,3), keepdims=True)
         mean = summed / num_non_zeros
@@ -141,7 +133,14 @@ class Model:
         std = np.maximum(std, 1.0/np.sqrt(faces[0].size))
         norm_faces = np.multiply((faces - mean), 1/std)
         '''
-        feed_dict = {self.image_placeholder: faces, self.phase_train_placeholder: False}
+
+        # normalize **** temp ****
+        mean = np.mean(faces, axis=(1,2,3), keepdims=True)
+        std = np.std(faces, axis=(1,2,3), keepdims=True)
+        std = np.maximum(std, 1.0/np.sqrt(faces[0].size))
+        norm_face = np.multiply((faces - mean), 1/std)
+
+        feed_dict = {self.image_placeholder: norm_face, self.phase_train_placeholder: False}
         embeddings = self.sess.run(self.encoder, feed_dict=feed_dict)
         return embeddings
 
@@ -222,16 +221,10 @@ class Model:
         # apply composite matrix to image
         aligned_frame = cv2.warpAffine(frame, P, (ENCODE_RES, ENCODE_RES), flags=cv2.INTER_CUBIC)
 
-        # normalize **** temp ****
-        mean = np.mean(aligned_frame)
-        std = np.std(aligned_frame)
-        std = np.maximum(std, 1.0/np.sqrt(aligned_frame.size))
-        norm_face = np.multiply((aligned_frame - mean), 1/std)
+        #cropped_face = self._crop_face(norm_face, P, landmarks)
+        cv2.imshow('aligned', aligned_frame)
 
-
-        cropped_face = self._crop_face(norm_face, P, landmarks)
-
-        return (cropped_face, landmarks) if get_landmarks else (cropped_face, _)
+        return (aligned_frame, landmarks) if get_landmarks else (aligned_frame, _)
 
     def detect_and_encode_face(self, image):
         img_width, img_height, _ = image.shape
