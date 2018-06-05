@@ -18,7 +18,7 @@ iou_threshold = 0.2
 video_size = 960.0
 frame_width = None
 frame_height = None
-DELAY = 3
+DELAY = 5
 count = 0
 
 
@@ -315,12 +315,13 @@ def display_video(mode='normal', name=None):
     success, frame = cap.read()
     initial = True
     show_landmarks = False
-    confidence_bar = False
+    show_fps = False
     help_text = None
     candidates, sims = None, None
     delay = 0
 
     while success:
+        start = time.time()
         if initial:
             #cv2.moveWindow('TrueSight', int((screen_width - video_size) / 2), int((screen_height - video_size) / 2))
             initial = False
@@ -415,13 +416,13 @@ def display_video(mode='normal', name=None):
         if key & 0xFF == ord('l'):
             show_landmarks = not show_landmarks
 
-        if key & 0xFF == ord('c'):
-            confidence_bar = not confidence_bar
+        if key & 0xFF == ord('f'):
+            show_fps = not show_fps
 
         # Legend
-        cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 100), 1)
-        cv2.putText(frame, "s: Save", (frame_width - 80, 35), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 100), 1)
-        cv2.putText(frame, "q: Quit", (frame_width - 80, 55), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 100), 1)
+        cv2.putText(frame, "e: Menu", (frame_width - 80, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 50), 1)
+        cv2.putText(frame, "s: Save", (frame_width - 80, 35), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 50), 1)
+        cv2.putText(frame, "q: Quit", (frame_width - 80, 55), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 0, 50), 1)
 
         if mode == 'add_user':
             instruc = "Position desired face in center of cross-hairs and press 'S'"
@@ -443,9 +444,12 @@ def display_video(mode='normal', name=None):
                 crosshair_color = (0, 255, 0)
                 thickness = 4
             draw_crosshairs(frame, frame_width, frame_height, crosshair_color, thickness)
-        cv2.imshow('TrueSight', frame)
         delay -= 1
-
+        stop = time.time()
+        fps = 1 // (stop - start)
+        if show_fps:
+            cv2.putText(frame, str(int(fps)), (15, 15), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (255, 255, 255), 1)
+        cv2.imshow('TrueSight', frame)
     # Clean up
     cap.release()
     cv2.destroyAllWindows()
