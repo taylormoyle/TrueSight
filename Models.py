@@ -33,7 +33,7 @@ class Model:
                  encoder_meta=None,
                  encoder_ckpt=None,
                  conf_threshold=0.5,
-                 rec_threshold=0.52):
+                 rec_threshold=0.65):
         self._load_detection_model(detection_prototxt, detection_model_file)
         self._load_landmark_model(landmark_model_file)
         self._load_encoder(encoder_meta, encoder_ckpt)
@@ -137,7 +137,7 @@ class Model:
         # normalize **** temp ****
         mean = np.mean(faces, axis=(1,2,3), keepdims=True)
         std = np.std(faces, axis=(1,2,3), keepdims=True)
-        std = np.maximum(std, 1.0/np.sqrt(faces[0].size))
+        #std = np.maximum(std, 1.0/np.sqrt(faces[0].size))
         norm_face = np.multiply((faces - mean), 1/std)
 
         feed_dict = {self.image_placeholder: norm_face, self.phase_train_placeholder: False}
@@ -269,6 +269,7 @@ class Model:
         for human in range(len(humans)):
             similarity = self._calculate_similarity(encodings, humans[human])
             similarities[human] = similarity
+            print(similarity)
 
         for s in range(len(similarities)):
             i, j = np.unravel_index(similarities.argmin(), similarities.shape)

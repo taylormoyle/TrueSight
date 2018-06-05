@@ -377,8 +377,8 @@ def display_video(mode='normal', name=None):
                         length = 0
                     else:
                         length = math.floor(150 * (1 / num))
-                    print(conf)
-                    print(length)
+                    #print(conf)
+                    #print(length)
                     x = x2 - length
 
                     if confidence_bar:
