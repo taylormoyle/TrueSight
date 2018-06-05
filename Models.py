@@ -7,10 +7,11 @@ import os
 
 from glob import glob
 from Operations import intersection_over_union as IoU
+from tensorflow.python.platform import gfile
 
-RES = 300
+DETECT_RES = (300, 300) #(160, 120)
 ENCODE_RES = 160
-LEFTEYE = (0.25, 0.2)
+LEFTEYE = (0.3, 0.2)
 
 LANDMARK_IDX = {'nose': (27,36),
                 'right_eye': (36,42),
@@ -30,13 +31,14 @@ class Model:
                  detection_prototxt=None,
                  detection_model_file=None,
                  landmark_model_file=None,
+                 encoder_pb=None,
                  encoder_meta=None,
                  encoder_ckpt=None,
                  conf_threshold=0.5,
-                 rec_threshold=0.52):
+                 rec_threshold=0.8):
         self._load_detection_model(detection_prototxt, detection_model_file)
         self._load_landmark_model(landmark_model_file)
-        self._load_encoder(encoder_meta, encoder_ckpt)
+        self._load_encoder_pb(encoder_pb)
         self.conf_threshold = conf_threshold
         self.rec_threshold = rec_threshold
 
@@ -66,15 +68,32 @@ class Model:
         else:
             self.encoder = None
 
+    def _load_encoder_pb(self, pb_file):
+        if pb_file is not None:
+            gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.6)
+            self.sess = tf.InteractiveSession(config=tf.ConfigProto(gpu_options=gpu_options))
+            with gfile.FastGFile(pb_file, 'rb') as f:
+                graph_def = tf.GraphDef()
+                graph_def.ParseFromString(f.read())
+                tf.import_graph_def(graph_def, name='')
+            init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
+            self.sess.run(init_op)
+            self.encoder = tf.get_default_graph().get_tensor_by_name('embeddings:0')
+            self.image_placeholder = tf.get_default_graph().get_tensor_by_name('input:0')
+            self.phase_train_placeholder = tf.get_default_graph().get_tensor_by_name('phase_train:0')
+        else:
+            self.encoder = None
+
+
     def get_faces(self, frame, crosshairs=None):
         if self.detector is None:
             return None
         h, w, _ = frame.shape
-        resized_frame = cv2.resize(frame, (RES, RES), interpolation=cv2.INTER_AREA)
+        resized_frame = cv2.resize(frame, DETECT_RES, interpolation=cv2.INTER_AREA)
 
         # Get the mean of the frame and convert to blob
-        mean = np.mean(resized_frame, axis=(0, 1))
-        blob = cv2.dnn.blobFromImage(resized_frame, 1.0, (RES, RES), mean)
+        mean = [104., 177., 123.] #np.mean(resized_frame, axis=(0, 1))
+        blob = cv2.dnn.blobFromImage(resized_frame, 1.0, DETECT_RES, mean)
 
         # Set frame (blob) as input to network and get detections
         self.detector.setInput(blob)
@@ -134,11 +153,14 @@ class Model:
         norm_faces = np.multiply((faces - mean), 1/std)
         '''
 
+        # convert to RGB from opencv BGR
+        rgb_faces = faces[:, :, :, ::-1]
+
         # normalize **** temp ****
-        mean = np.mean(faces, axis=(1,2,3), keepdims=True)
-        std = np.std(faces, axis=(1,2,3), keepdims=True)
-        std = np.maximum(std, 1.0/np.sqrt(faces[0].size))
-        norm_face = np.multiply((faces - mean), 1/std)
+        mean = np.mean(rgb_faces, axis=(1,2,3), keepdims=True)
+        std = np.std(rgb_faces, axis=(1,2,3), keepdims=True)
+        #std = np.maximum(std, 1.0/np.sqrt(faces[0].size))
+        norm_face = np.multiply((rgb_faces - mean), 1/std)
 
         feed_dict = {self.image_placeholder: norm_face, self.phase_train_placeholder: False}
         embeddings = self.sess.run(self.encoder, feed_dict=feed_dict)
@@ -244,7 +266,7 @@ class Model:
         squared = np.square(diff)
         added = np.sum(squared, axis=1)
         root = np.sqrt(added)
-        return root
+        return added
 
     def find_similarity(self, humans, boxes):
         filenames = os.path.join('users', '*.txt')
@@ -269,6 +291,7 @@ class Model:
         for human in range(len(humans)):
             similarity = self._calculate_similarity(encodings, humans[human])
             similarities[human] = similarity
+            print(similarity)
 
         for s in range(len(similarities)):
             i, j = np.unravel_index(similarities.argmin(), similarities.shape)

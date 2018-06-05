@@ -30,6 +30,7 @@ detection_model_file = os.path.join('models', 'face_detector', 'nn.caffemodel')
 landmark_model_file = os.path.join('models', 'landmark_detector', 'face_landmarks.dat')
 
 # Encoder
+encoder_pb = os.path.join('models', 'encoder', '20170511-185253.pb')
 encoder_meta = os.path.join('models', 'encoder', 'model-20170511-185253.meta')
 encoder_ckpt = os.path.join('models', 'encoder', 'model-20170511-185253.ckpt-80000')
 
@@ -37,6 +38,7 @@ encoder_ckpt = os.path.join('models', 'encoder', 'model-20170511-185253.ckpt-800
 model = Models.Model(prototxt,
                      detection_model_file,
                      landmark_model_file,
+                     encoder_pb,
                      encoder_meta,
                      encoder_ckpt)
 
@@ -377,8 +379,8 @@ def display_video(mode='normal', name=None):
                         length = 0
                     else:
                         length = math.floor(150 * (1 / num))
-                    print(conf)
-                    print(length)
+                    #print(conf)
+                    #print(length)
                     x = x2 - length
 
                     if confidence_bar:
