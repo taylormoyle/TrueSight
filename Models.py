@@ -6,7 +6,6 @@ import dlib
 import os
 
 from glob import glob
-from Operations import intersection_over_union as IoU
 from tensorflow.python.platform import gfile
 
 DETECT_RES = (300, 300) #(160, 120)
@@ -35,7 +34,7 @@ class Model:
                  encoder_meta=None,
                  encoder_ckpt=None,
                  conf_threshold=0.5,
-                 rec_threshold=0.8):
+                 rec_threshold=0.9):
         self._load_detection_model(detection_prototxt, detection_model_file)
         self._load_landmark_model(landmark_model_file)
         self._load_encoder_pb(encoder_pb)
@@ -111,11 +110,8 @@ class Model:
             box = (detections[0, 0, i, 3:7] * np.array([w, h, w, h])).astype("int")
             x1, y1, x2, y2 = box
 
-            # calculate the IoU
-            iou = IoU(crosshairs, box) if crosshairs is not None else None
-
             # package
-            predictions.append((iou, box))
+            predictions.append(box)
 
         return predictions
 
@@ -273,7 +269,7 @@ class Model:
         users = glob(filenames)
         similarities = np.zeros((len(humans), len(users))) + self.rec_threshold
         encodings = np.zeros((len(users), 128))
-        candidates = [['UNKNOWN', b[1]] for b in boxes]
+        candidates = [['UNKNOWN', b] for b in boxes]
         names = []
         sims = np.zeros(len(candidates))
 

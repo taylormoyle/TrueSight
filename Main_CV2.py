@@ -9,11 +9,12 @@ import glob
 import Models
 import math
 from PIL import ImageTk, Image
+from Operations import intersection_over_union as IoU
 
 RES = 300
 username = ""
 password = ""
-iou_threshold = 0.4
+iou_threshold = 0.2
 video_size = 960.0
 frame_width = None
 frame_height = None
@@ -325,10 +326,6 @@ def display_video(mode='normal', name=None):
             initial = False
         success, frame = cap.read()
         og_frame = frame.copy()
-
-        crosshair_color = (0, 0, 255)
-        thickness = 2
-
         faces = model.get_faces(frame, crosshair_box)
         aligned_faces = np.zeros((len(faces), Models.ENCODE_RES, Models.ENCODE_RES, 3))
         encodings = np.zeros((len(faces), 128))
@@ -338,12 +335,8 @@ def display_video(mode='normal', name=None):
             for f in range(len(faces)):
                 # check if inside crosshairs
                 # if true change crosshair color and increase thickness else draw box around face
-                #if iou > iou_threshold or True:
-                crosshair_color = (0, 255, 0)
-                thickness = 4
-
                 # Pre-process and get facial encodings
-                aligned_faces[f], landmarks = model.align_face(frame, faces[f][1], get_landmarks=show_landmarks)
+                aligned_faces[f], landmarks = model.align_face(frame, faces[f], get_landmarks=show_landmarks)
 
                 if show_landmarks:
                     for (x, y) in landmarks:
@@ -360,31 +353,22 @@ def display_video(mode='normal', name=None):
                 # Display predicted user's name, along with the network's confidence (bar)
                 for h in range(len(candidates)):
                     x1, y1, x2, y2 = candidates[h][1]
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
                     y = y1 - 10 if y1 - 10 > 10 else y1 + 10
-                    cv2.putText(frame, candidates[h][0], (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.5, (0, 0, 255), 1)
                     conf = sims[h]
-                    min_conf = 0.1
-                    max_conf = 0.4
-                    diff = max_conf - min_conf
-                    denom = diff * 0.1
-                    num = math.floor(conf / denom)
-                    if num > 7:
-                        bar_color = (0, 0, 255)
-                    if 7 >= num >= 3:
-                        bar_color = (0, 255, 0)
-                    if num < 3:
-                        bar_color = (255, 0, 0)
-                    if num <= 0:
-                        length = 0
+                    if conf == 0.0:
+                        box_color = (0, 0, 255)
                     else:
-                        length = math.floor(150 * (1 / num))
-                    #print(conf)
-                    #print(length)
-                    x = x2 - length
-
-                    if confidence_bar:
-                        cv2.line(frame, (x, y), (x2, y), bar_color, thickness=5)
+                        max = 255
+                        color_scale = conf * 250
+                        if color_scale > 255:
+                            color_scale = 255
+                        box_color = (max - color_scale, color_scale, 0)
+                    avg = np.mean(frame[y:y1, x1:x2, :])
+                    blue = 255 - avg
+                    green = 255 - avg
+                    red = 255 - avg
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
+                    cv2.putText(frame, candidates[h][0], (x1, y), cv2.FONT_HERSHEY_TRIPLEX, 0.6, (blue, green, red), 1)
 
         # Quit video feed
         key = cv2.waitKey(1)
@@ -414,7 +398,7 @@ def display_video(mode='normal', name=None):
                     user_name = name.replace(' ', '_')
                     filename = os.path.join('users', user_name + '.txt')
 
-                    aligned, _ = model.align_face(frame, faces[0][1], get_landmarks=False)
+                    aligned, _ = model.align_face(frame, faces[0], get_landmarks=False)
                     encoding = model.get_encoding(aligned)
                     np.savetxt(filename, encoding)
 
@@ -447,10 +431,17 @@ def display_video(mode='normal', name=None):
                         cv2.FONT_HERSHEY_TRIPLEX, 0.6, (100, 255, 0), 1)
             if help_text is not None:
                 ht_size = cv2.getTextSize(help_text, cv2.FONT_HERSHEY_TRIPLEX, 0.6, 1)
-                ht_x, ht_y = (in_x, in_y + ht_size[0][1] + 10   )
+                ht_x, ht_y = (in_x, in_y + ht_size[0][1] + 10)
                 cv2.putText(frame, help_text, (ht_x, ht_y),
                             cv2.FONT_HERSHEY_TRIPLEX, 0.6, (255, 170, 0), 1)
 
+            crosshair_color = (0, 0, 255)
+            thickness = 2
+            if len(faces) > 0:
+                iou = IoU(crosshair_box, faces[0])
+            if iou > iou_threshold:
+                crosshair_color = (0, 255, 0)
+                thickness = 4
             draw_crosshairs(frame, frame_width, frame_height, crosshair_color, thickness)
         cv2.imshow('TrueSight', frame)
         delay -= 1
