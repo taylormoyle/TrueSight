@@ -3,12 +3,10 @@ from tkinter import *
 from tkinter.filedialog import askopenfilename
 import os
 import time
-import math
 import numpy as np
 import glob
 import Models
-import math
-from PIL import ImageTk, Image
+from PIL import ImageTk
 from Operations import intersection_over_union as IoU
 
 RES = 300
@@ -206,6 +204,7 @@ def menu():
     def run_video():
         root.quit()
         root.destroy()
+        model.reload_users()
         display_video()
 
     def import_callback(entry_name, toplevel):
@@ -306,6 +305,8 @@ def display_video(mode='normal', name=None):
     cap = cv2.VideoCapture(0)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, video_size)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, video_size)
+    cap.set(cv2.CAP_PROP_FPS, 100)
+    fps = cap.get(cv2.CAP_PROP_FPS)
     global frame_width
     frame_width = int(cap.get(3))
     global frame_height
@@ -323,19 +324,16 @@ def display_video(mode='normal', name=None):
     while success:
         start = time.time()
         if initial:
-            #cv2.moveWindow('TrueSight', int((screen_width - video_size) / 2), int((screen_height - video_size) / 2))
             initial = False
         success, frame = cap.read()
         og_frame = frame.copy()
-        faces = model.get_faces(frame, crosshair_box)
+        faces = model.get_faces(frame)
         aligned_faces = np.zeros((len(faces), Models.ENCODE_RES, Models.ENCODE_RES, 3))
         encodings = np.zeros((len(faces), 128))
 
         if mode == 'normal':
             # Loop over the detections
             for f in range(len(faces)):
-                # check if inside crosshairs
-                # if true change crosshair color and increase thickness else draw box around face
                 # Pre-process and get facial encodings
                 aligned_faces[f], landmarks = model.align_face(frame, faces[f], get_landmarks=show_landmarks)
 
