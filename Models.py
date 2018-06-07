@@ -8,7 +8,7 @@ import os
 from glob import glob
 from tensorflow.python.platform import gfile
 
-DETECT_RES = (300, 300) #(160, 120)
+DETECT_RES = (160, 120)
 ENCODE_RES = 160
 LEFTEYE = (0.3, 0.2)
 
@@ -40,6 +40,7 @@ class Model:
         self._load_encoder_pb(encoder_pb)
         self.conf_threshold = conf_threshold
         self.rec_threshold = rec_threshold
+        self._load_current_user_encodings()
 
     # Load Detection and Landmark Models
     def _load_detection_model(self, prototxt, detection_model_file):
@@ -83,8 +84,7 @@ class Model:
         else:
             self.encoder = None
 
-
-    def get_faces(self, frame, crosshairs=None):
+    def get_faces(self, frame):
         if self.detector is None:
             return None
         h, w, _ = frame.shape
@@ -138,21 +138,10 @@ class Model:
         if len(faces.shape) < 4:
             faces = faces.reshape(-1, 160, 160, 3)
 
-        '''
-        summed = np.sum(faces, axis=(1,2,3), keepdims=True)
-        num_non_zeros = np.sum((faces != 0).astype(int), axis=(1,2,3), keepdims=True)
-        mean = summed / num_non_zeros
-
-        variance = np.square(np.sum(faces[(faces != 0)] - mean, axis=(1,2,3), keepdims=True)) / num_non_zeros
-        std = np.sqrt(variance)
-        std = np.maximum(std, 1.0/np.sqrt(faces[0].size))
-        norm_faces = np.multiply((faces - mean), 1/std)
-        '''
-
         # convert to RGB from opencv BGR
         rgb_faces = faces[:, :, :, ::-1]
 
-        # normalize **** temp ****
+        # normalize
         mean = np.mean(rgb_faces, axis=(1,2,3), keepdims=True)
         std = np.std(rgb_faces, axis=(1,2,3), keepdims=True)
         #std = np.maximum(std, 1.0/np.sqrt(faces[0].size))
@@ -239,7 +228,7 @@ class Model:
         # apply composite matrix to image
         aligned_frame = cv2.warpAffine(frame, P, (ENCODE_RES, ENCODE_RES), flags=cv2.INTER_CUBIC)
 
-        #cropped_face = self._crop_face(norm_face, P, landmarks)
+        # cropped_face = self._crop_face(norm_face, P, landmarks)
         cv2.imshow('aligned', aligned_frame)
 
         return (aligned_frame, landmarks) if get_landmarks else (aligned_frame, _)
@@ -247,52 +236,55 @@ class Model:
     def detect_and_encode_face(self, image):
         img_width, img_height, _ = image.shape
 
-        faces = self.get_faces(image, None)
+        faces = self.get_faces(image)
 
         if len(faces) == 0:
             return None
 
-        _ , face = faces[0]
+        _, face = faces[0]
         aligned_face, _ = self.align_face(image, face)
         return self.get_encoding(aligned_face)[0]
 
+    def reload_users(self):
+        self._load_current_user_encodings()
+
+    def _load_current_user_encodings(self):
+        filenames = os.path.join('users', '*.txt')
+        users = glob(filenames)
+        self.current_user_encodings = np.zeros((len(users), 128))
+        self.current_user_names = []
+
+        for i in range(len(users)):
+            file = open(users[i])
+            encoding = file.read().split()
+            self.current_user_encodings[i] = np.array(encoding, dtype=np.float32)
+            file.close()
+            _, filename = os.path.split(users[i])
+            self.current_user_names.append(filename[:-4])
 
     def _calculate_similarity(self, users, current_user):
         diff = users - current_user
         squared = np.square(diff)
         added = np.sum(squared, axis=1)
-        root = np.sqrt(added)
         return added
 
     def find_similarity(self, humans, boxes):
-        filenames = os.path.join('users', '*.txt')
-        users = glob(filenames)
-        similarities = np.zeros((len(humans), len(users))) + self.rec_threshold
-        encodings = np.zeros((len(users), 128))
+        similarities = np.zeros((len(humans), len(self.current_user_encodings))) + self.rec_threshold
         candidates = [['UNKNOWN', b] for b in boxes]
-        names = []
         sims = np.zeros(len(candidates))
 
-        if len(users) == 0:
+        if len(self.current_user_encodings) == 0:
             return candidates, sims
 
-        for i in range(len(users)):
-            file = open(users[i])
-            encoding = file.read().split()
-            encodings[i] = np.array(encoding, dtype=np.float32)
-            file.close()
-            _, filename = os.path.split(users[i])
-            names.append(filename[:-4])
-
         for human in range(len(humans)):
-            similarity = self._calculate_similarity(encodings, humans[human])
+            similarity = self._calculate_similarity(self.current_user_encodings, humans[human])
             similarities[human] = similarity
             print(similarity)
 
         for s in range(len(similarities)):
             i, j = np.unravel_index(similarities.argmin(), similarities.shape)
             if similarities[i, j] < self.rec_threshold:
-                candidates[i][0] = names[j]
+                candidates[i][0] = self.current_user_names[j]
                 sims[i] = similarities[i][j]
             similarities[i, :] = 10.
             similarities[:, j] = 10.
